@@ -1,0 +1,14 @@
+# Installed at runtime into ${CLAUDE_PLUGIN_DATA}; never committed
+node_modules/
+
+# Local test / scratch artifacts
+.tmp-*
+*.log
+
+# Machine-specific local install state (marketplace + enabled plugins)
+.claude/settings.local.json
+
+# SQLite runtime store (lives in CLAUDE_PLUGIN_DATA, but ignore if it ever lands here)
+state.db
+state.db-wal
+state.db-shm
