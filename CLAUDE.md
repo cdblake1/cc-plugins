@@ -1,0 +1,110 @@
+# CLAUDE.md — Claude Code Plugin Build
+
+## What we're building
+A single Claude Code **plugin bundle** containing all four primitives: slash command(s),
+a subagent, hooks, and an MCP server. Distributed local-first, shareable later via marketplace.
+
+**v1 (core):** session journal + cross-session memory + guardrails.
+- Journal: log every file edit and session boundary to a SQLite store.
+- Memory/recall: an MCP server exposing `store` and `recall` tools backed by the same DB.
+- Guardrails: a PreToolUse hook that blocks risky Bash commands.
+- A slash command and a subagent that read/write the store.
+
+**v2 (later phase, do NOT start until v1 passes end-to-end):** dev-hygiene gating
+(lint/format/test) layered on the same store. Leave hooks for this stubbed/commented in v1.
+
+## Stack decision (locked)
+- **TypeScript/Node** for the MCP server and hook scripts.
+- Run hook scripts via `node --experimental-strip-types` (no build step). **Requires Node >= 22.6.0** — verify with `node --version` before relying on it.
+- Persist `node_modules` in `${CLAUDE_PLUGIN_DATA}` using the SessionStart install pattern (see below).
+- SQLite for the store. Prefer `node:sqlite` if the runtime supports it; otherwise `better-sqlite3` installed into `${CLAUDE_PLUGIN_DATA}`.
+
+## v1 implementation notes (what actually shipped — supersedes parts of "Stack decision")
+Deliberate, validated deviations from the locked stack:
+- **MCP delivery: bundled, NOT runtime-installed.** The server is bundled with esbuild into a
+  single committed `mcp/server.bundle.mjs` (SDK stdio path + zod inlined; express/hono
+  tree-shaken). `.mcp.json` runs it with zero `node_modules`; there is no SessionStart install
+  hook. Rationale: this machine sits behind TLS interception (a corporate root CA Node doesn't
+  trust by default), so runtime `npm install` failed/hung — `UNABLE_TO_VERIFY_LEAF_SIGNATURE`,
+  surfacing as npm's misleading "Exit handler never called!". Bundling means end users never run
+  npm (they'd hit the same wall behind their own proxies). The persistent-`node_modules` pattern
+  is therefore unused in v1.
+- **A build step exists for the MCP server only:** `npm run build` (esbuild) regenerates the
+  bundle. Hook scripts still run via `node --experimental-strip-types` with no build, as specified.
+- **Dev install behind a TLS proxy:** `NODE_OPTIONS=--use-system-ca npm install` (trusts the OS
+  cert store).
+- **Journaling hooks use only `node:sqlite`** (built-in), so they need no `node_modules` and work
+  independent of the bundle.
+- **Guardrail "writes outside project dir" rule deferred** (static parsing too false-positive-prone);
+  `rm -rf` of dangerous targets, pipe-to-shell, and force-push-to-protected-branch are enforced.
+
+## Verified mechanics (confirmed against code.claude.com/docs/en/plugins-reference — trust these)
+- **Layout:** ONLY `plugin.json` goes in `.claude-plugin/`. Every component dir (`commands/`,
+  `agents/`, `hooks/`, `skills/`, `.mcp.json`) lives at the **plugin root**.
+- **Manifest:** only `name` is required (kebab-case). `version` optional: if set, you must bump
+  it for users to get updates; if omitted, git SHA is the version (every commit = update).
+- **State dir `${CLAUDE_PLUGIN_DATA}`** → `~/.claude/plugins/data/{id}/`. Survives updates &
+  reinstalls. **This is the only correct place to write persistent state.**
+- **`${CLAUDE_PLUGIN_ROOT}` is EPHEMERAL** — wiped ~7 days after an update. Never write state here;
+  read-only (scripts, bundled config). Always quote: `"${CLAUDE_PLUGIN_ROOT}"`.
+- **Secrets:** declare in `userConfig` with `"sensitive": true`. Stored in system keychain
+  (~2KB total limit) or `~/.claude/.credentials.json` fallback. Substitute as
+  `${user_config.KEY}` in `.mcp.json`/hooks; exported to subprocesses as `CLAUDE_PLUGIN_OPTION_<KEY>`.
+  NEVER commit a secret to any plugin file.
+- **Plugin-shipped agents** may NOT declare `hooks`, `mcpServers`, or `permissionMode` in
+  frontmatter (load-time security rejection). Declare hooks at plugin level in `hooks/hooks.json`.
+- **Hook handler types:** `command`, `http`, `mcp_tool`, `prompt`, `agent`.
+- **Hook events we use:** `SessionStart`, `PreToolUse`, `PostToolUse`, `SessionEnd`, `Stop`.
+  Event names are case-sensitive.
+- **Composition:** hooks can call MCP tools / spawn agents; a slash command/skill can instruct
+  Claude to use a named subagent or `mcp__server__tool`. Subagents CANNOT spawn subagents.
+  MCP servers CANNOT fire hooks.
+- **Use `command` hooks for hard policy** (e.g. the guardrail). `mcp_tool` hooks are
+  non-blocking if the MCP server is down — fine for journaling/enrichment, NOT for security.
+
+## Hook safety rules (non-negotiable)
+- Hard block = **`exit 2`** (NOT `exit 1`, which is non-blocking).
+- `Stop` hooks: gate on `stop_hook_active` to avoid infinite loops:
+  `[ "$(echo "$INPUT" | jq -r '.stop_hook_active')" = "true" ] && exit 0`
+- Set an explicit `"timeout"` (5–30s) on every hook; mark non-critical ones `"async": true`.
+- `chmod +x` every script; shebang `#!/usr/bin/env bash` (or run node directly).
+- Exact matcher case: `Write|Edit|MultiEdit`, `Bash`.
+
+## VERIFY — do NOT trust blind (flagged uncertain)
+These came from prior research and are NOT confirmed against primary sources. Test empirically; do not design around them until reproduced:
+- Claim: `--plugin-dir` doesn't load inline `mcpServers` (alleged issue #15308) → **just test it.**
+  If MCP doesn't appear under `/mcp` in local dev, try also passing `--mcp-config ./<plugin>/.mcp.json`.
+- Claim: inline `mcpServers` in plugin.json gets dropped (alleged #16143) → docs show inline as
+  supported. We use a **separate `.mcp.json`** anyway (cleaner), so this is moot.
+- Claim: disabled plugins still run hooks (#39307); userConfig prompt sometimes doesn't fire
+  (#39455/#39827) → treat as rumors; verify if you hit odd behavior.
+- All version floors (e.g. `bin/` @ 2.1.91, displayName @ 2.1.143) — confirm against
+  `claude --version` + live docs before depending on them.
+
+## Persistent node_modules pattern (from docs, confirmed)
+SessionStart hook that (re)installs deps only when package.json changes:
+diff the bundled `package.json` against the copy in `${CLAUDE_PLUGIN_DATA}`; on mismatch,
+copy it over and `npm install` there; on failure `rm` the copy so next session retries.
+MCP server then runs with `NODE_PATH=${CLAUDE_PLUGIN_DATA}/node_modules`.
+
+## Data model (SQLite @ ${CLAUDE_PLUGIN_DATA}/state.db)
+- `sessions(id, started_at, ended_at, cwd)`
+- `edits(id, session_id, tool, file_path, ts)`
+- `notes(id, session_id, key, body, ts)`  ← memory/recall store
+Keep it minimal; migrations can come later.
+
+## Guardrail default blocklist (conservative; tune later)
+Block (exit 2) on Bash commands matching: `rm -rf` on `/` or `~` or `..`; `git push --force`
+to a protected branch; pipe-to-shell (`curl … | sh`, `wget … | bash`); writes outside the
+project dir. When in doubt, `ask` rather than `deny`. Log every decision to the journal.
+
+## Build order (each step has an acceptance gate — see kickoff prompt)
+0 prereqs → 1 scaffold+manifest → 2 SQLite lib → 3 MCP store/recall tools →
+4 journal hooks (SessionStart/PostToolUse/SessionEnd) → 5 guardrail PreToolUse hook →
+6 slash command + subagent using the store → 7 local end-to-end verify →
+8 marketplace.json (still local) → 9 GitHub publish → 10 (v2) dev-hygiene gating.
+
+## Definition of done (v1)
+`claude plugin validate ./<plugin> --strict` exits 0; in a session `/plugin`, `/agents`,
+`/mcp` all show the plugin's components; a file edit creates an `edits` row; a risky Bash
+command is blocked; `recall` returns previously stored notes across a session restart.

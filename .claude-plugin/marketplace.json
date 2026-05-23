@@ -1,0 +1,14 @@
+{
+  "name": "cc-plugins",
+  "owner": {
+    "name": "Caleb Blake"
+  },
+  "description": "A Claude Code plugin marketplace.",
+  "plugins": [
+    {
+      "name": "session-journal",
+      "source": "./session-journal",
+      "description": "Session journal, cross-session memory (store/recall), and Bash guardrails for Claude Code."
+    }
+  ]
+}
