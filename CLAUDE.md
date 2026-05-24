@@ -38,6 +38,19 @@ Deliberate, validated deviations from the locked stack:
 - **Guardrail "writes outside project dir" rule deferred** (static parsing too false-positive-prone);
   `rm -rf` of dangerous targets, pipe-to-shell, and force-push-to-protected-branch are enforced.
 
+## v2 implementation notes (dev-hygiene gating — shipped)
+- **Opt-in by design:** the Stop hook runs nothing unless `format_command` / `lint_command` /
+  `test_command` are set in `userConfig` (exported to the hook as `CLAUDE_PLUGIN_OPTION_*`).
+  Zero impact by default.
+- **Gate = Stop hook, `exit 2` on failure**, gated on `stop_hook_active` (fires once per
+  turn-chain to avoid a stop/continue deadlock). Each run logged to the `checks` table.
+- **Check commands run via `execSync` (platform default shell):** `cmd.exe` on Windows,
+  `/bin/sh` on POSIX. Keep configured commands shell-agnostic (e.g. `npm test`); avoid `;`/`&&`
+  chains that parse differently across shells. The unit tests use `node -e` for exactly this reason.
+- `/hygiene` runs the same commands on demand via `${user_config.*}` substitution in the command body.
+- Adding the `checks` table to `db.ts` changed the MCP bundle (db.ts is inlined) → rebuilt;
+  CI's bundle-in-sync check enforces it.
+
 ## Verified mechanics (confirmed against code.claude.com/docs/en/plugins-reference — trust these)
 - **Layout:** ONLY `plugin.json` goes in `.claude-plugin/`. Every component dir (`commands/`,
   `agents/`, `hooks/`, `skills/`, `.mcp.json`) lives at the **plugin root**.

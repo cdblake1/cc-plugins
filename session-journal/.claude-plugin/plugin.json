@@ -2,11 +2,28 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "session-journal",
   "displayName": "Session Journal",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Session journal, cross-session memory (store/recall), and Bash guardrails for Claude Code.",
   "author": {
     "name": "Caleb Blake"
   },
   "license": "MIT",
-  "keywords": ["journal", "memory", "guardrails", "sqlite", "mcp"]
+  "keywords": ["journal", "memory", "guardrails", "sqlite", "mcp"],
+  "userConfig": {
+    "format_command": {
+      "type": "string",
+      "title": "Format command",
+      "description": "Optional. Shell command to format code (e.g. 'npm run format'). Runs at Stop; if it exits non-zero the turn is blocked until fixed. Leave empty to disable."
+    },
+    "lint_command": {
+      "type": "string",
+      "title": "Lint command",
+      "description": "Optional. Shell command to lint (e.g. 'npm run lint'). Runs at Stop; if it exits non-zero the turn is blocked until fixed. Leave empty to disable."
+    },
+    "test_command": {
+      "type": "string",
+      "title": "Test command",
+      "description": "Optional. Shell command to run tests (e.g. 'npm test'). Runs at Stop; if it exits non-zero the turn is blocked until fixed. Leave empty to disable."
+    }
+  }
 }
