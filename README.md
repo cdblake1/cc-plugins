@@ -6,7 +6,7 @@ A [Claude Code](https://claude.com/claude-code) plugin marketplace.
 
 | Plugin | What it does |
 | :----- | :----------- |
-| [`session-journal`](./session-journal) | Session journal, cross-session memory (`store`/`recall`), and Bash guardrails. |
+| [`session-journal`](./session-journal) | Session journal, cross-session memory (`store`/`recall`), Bash guardrails, and opt-in dev-hygiene gating. |
 
 ## Install
 
@@ -19,7 +19,7 @@ A [Claude Code](https://claude.com/claude-code) plugin marketplace.
 
 ## session-journal
 
-Three capabilities, one small SQLite store (at `${CLAUDE_PLUGIN_DATA}/state.db`, which
+Four capabilities, one small SQLite store (at `${CLAUDE_PLUGIN_DATA}/state.db`, which
 survives plugin updates and reinstalls):
 
 - **Journal** — hooks record every file edit and session boundary.
@@ -32,12 +32,30 @@ survives plugin updates and reinstalls):
   (`rm -rf` of `/`·`~`·`$HOME`·`..`, piping a download into a shell, force-pushing to
   `main`/`master`), asks on softer risks (other force-pushes, `sudo`), and logs every
   decision.
+- **Dev-hygiene gating** (opt-in) — a `Stop` hook runs your configured `format`/`lint`/`test`
+  commands when Claude finishes; if any fail, the turn is **blocked** until they pass. Results
+  are logged to a `checks` table. Off by default (runs nothing until you configure a command).
 
 ### Components
 
 - Slash command **`/journal [note or query]`** — store a note and/or recall recent ones.
+- Slash command **`/hygiene`** — run your configured dev-hygiene checks on demand.
 - Subagent **`journal-keeper`** — remembers and recalls cross-session context.
 - MCP server **`session-journal`** — the `store` / `recall` tools above.
+
+### Configuration (dev-hygiene gating)
+
+Set any of these in the plugin's configuration (prompted at enable time, or via
+`/plugin`). All are optional — an empty command disables that check:
+
+| Option | Example | Effect |
+| :----- | :------ | :----- |
+| `format_command` | `npm run format` | Run at `Stop`; non-zero blocks the turn |
+| `lint_command` | `npm run lint` | Run at `Stop`; non-zero blocks the turn |
+| `test_command` | `npm test` | Run at `Stop`; non-zero blocks the turn |
+
+The gate fires once per turn-chain (gated on `stop_hook_active`), giving Claude one shot to
+fix failures before the turn can end. Keep the commands reasonably fast.
 
 ### Requirements
 
@@ -55,7 +73,11 @@ no `npm install` on the user's machine. Rebuild it after editing `mcp/server.ts`
 cd session-journal
 npm install      # behind a TLS-intercepting proxy: NODE_OPTIONS=--use-system-ca npm install
 npm run build    # regenerates mcp/server.bundle.mjs via esbuild
+npm test         # guardrail + check-runner unit tests
 ```
+
+CI rebuilds the bundle and fails on any drift (`git diff --exit-code`), runs the tests, and
+validates the manifest — so the committed bundle is always in sync with source.
 
 ## License
 

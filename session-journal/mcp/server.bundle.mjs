@@ -21158,8 +21158,19 @@ function migrate(db) {
       ts          TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS checks (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id  TEXT,
+      kind        TEXT NOT NULL,  -- 'format' | 'lint' | 'test'
+      command     TEXT NOT NULL,
+      ok          INTEGER NOT NULL,  -- 1 pass, 0 fail
+      output      TEXT,
+      ts          TEXT NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_edits_session ON edits(session_id);
     CREATE INDEX IF NOT EXISTS idx_notes_key     ON notes(key);
+    CREATE INDEX IF NOT EXISTS idx_checks_session ON checks(session_id);
   `);
 }
 

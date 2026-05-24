@@ -45,6 +45,17 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node --experimental-strip-types --no-warnings \"${CLAUDE_PLUGIN_ROOT}/scripts/hook-stop-checks.ts\"",
+            "timeout": 130
+          }
+        ]
+      }
     ]
   }
 }
