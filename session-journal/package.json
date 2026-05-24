@@ -1,0 +1,15 @@
+{
+  "name": "session-journal",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Build-time deps for the session-journal MCP server. These are bundled into mcp/server.bundle.mjs by `npm run build` and are NOT needed at runtime.",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "esbuild": "^0.28.0",
+    "zod": "^3.25.0"
+  }
+}
