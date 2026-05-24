@@ -21149,6 +21149,15 @@ function migrate(db) {
       ts          TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS guardrail (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id  TEXT,
+      command     TEXT NOT NULL,
+      decision    TEXT NOT NULL,  -- 'allow' | 'ask' | 'deny'
+      reason      TEXT,
+      ts          TEXT NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_edits_session ON edits(session_id);
     CREATE INDEX IF NOT EXISTS idx_notes_key     ON notes(key);
   `);
