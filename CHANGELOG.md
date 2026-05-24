@@ -2,6 +2,16 @@
 
 All notable changes to the **session-journal** plugin. Dates are UTC.
 
+## [0.5.1] — 2026-05-24
+### Fixed
+- **Handoff now leads with your `/checkpoint`, not the auto rollup.** The `SessionStart` handoff
+  picked the most recent of `checkpoint`/`session-rollup` by recency, so the rollup written at
+  `SessionEnd` (newer) shadowed the checkpoint from the same session. It now prefers `checkpoint`
+  and only falls back to `session-rollup` when no checkpoint exists in scope.
+- **Rollup no longer lists deleted files.** The `SessionEnd` rollup filtered nothing, so scratch/
+  temp files created and deleted within a session still appeared. Edits to files that no longer
+  exist at session end are now dropped (new pure `liveEdits` helper + tests).
+
 ## [0.5.0] — 2026-05-24
 ### Added
 - **Auto-capture (closes the capture gap).** Memory no longer depends on someone remembering to

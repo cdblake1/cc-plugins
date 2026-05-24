@@ -31,6 +31,15 @@ export function baseName(p: string): string {
 }
 
 /**
+ * PURE: drop edits whose file no longer exists at session end, per the given `exists` predicate
+ * (the hook passes `fs.existsSync`). This keeps transient scratch/temp files that were created and
+ * later deleted out of the rollup. Edits with no file_path are kept — they still represent activity.
+ */
+export function liveEdits(edits: EditRow[], exists: (p: string) => boolean): EditRow[] {
+  return edits.filter((e) => !e.file_path || exists(e.file_path));
+}
+
+/**
  * PURE: build the deterministic session-rollup note body from a session and its edits.
  * Returns null when there's nothing worth recording (no edits) — the hook then skips the insert,
  * so read-only sessions don't clutter the store.

@@ -34,9 +34,13 @@ try {
   let recent: NoteRow[];
   try {
     const placeholders = HANDOFF_KEYS.map(() => "?").join(", ");
+    // Lead with the most recent *checkpoint* (deliberate, model-written handoff); only fall back to
+    // the auto session-rollup when no checkpoint exists in scope. Without this, the rollup written
+    // at SessionEnd (newer id) would shadow the checkpoint from the same session.
     handoff = db
       .prepare(
-        `SELECT id, key, body FROM notes WHERE ${scopeSql} AND key IN (${placeholders}) ORDER BY id DESC LIMIT 1`,
+        `SELECT id, key, body FROM notes WHERE ${scopeSql} AND key IN (${placeholders}) ` +
+          `ORDER BY CASE key WHEN 'checkpoint' THEN 0 ELSE 1 END ASC, id DESC LIMIT 1`,
       )
       .get(...scopeParams, ...HANDOFF_KEYS) as NoteRow | undefined;
 
