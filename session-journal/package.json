@@ -1,12 +1,12 @@
 {
   "name": "session-journal",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "Build-time deps for the session-journal MCP server. These are bundled into mcp/server.bundle.mjs by `npm run build` and are NOT needed at runtime.",
   "scripts": {
     "build": "node build.mjs",
-    "test": "node --experimental-strip-types --no-warnings scripts/guardrail.test.ts && node --experimental-strip-types --no-warnings scripts/checks.test.ts"
+    "test": "node --experimental-strip-types --no-warnings scripts/guardrail.test.ts && node --experimental-strip-types --no-warnings scripts/checks.test.ts && node --experimental-strip-types --no-warnings scripts/gitctx.test.ts"
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

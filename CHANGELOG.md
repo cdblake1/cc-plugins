@@ -2,6 +2,17 @@
 
 All notable changes to the **session-journal** plugin. Dates are UTC.
 
+## [0.3.0] — 2026-05-24
+### Added
+- **Git-aware memory.** Notes are tagged with the current repository; `recall` defaults to the
+  current repo (plus un-scoped notes) with a new `scope: 'repo' | 'all'` parameter.
+- **Auto-recall:** a `SessionStart` hook injects this repo's recent notes into context at the start
+  of every session — cross-session memory now reaches the model without being asked.
+- `sessions` rows record `repo` / `branch` / `commit_sha`.
+- Guardrail force-push rule now targets the repo's **dynamically detected default branch**
+  (e.g. `develop`), not just `main`/`master`.
+- `scripts/gitctx.ts` (+ unit tests); first DB migration (`addColumnIfMissing`) upgrades pre-v3 stores.
+
 ## [0.2.0] — 2026-05-24
 ### Added
 - **Dev-hygiene gating (opt-in).** A `Stop` hook runs the user-configured `format_command` /

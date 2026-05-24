@@ -13,6 +13,7 @@
 import { openDb, now } from "./db.ts";
 import { readHookInput } from "./hooklib.ts";
 import { evaluate, type Decision } from "./guardrail-policy.ts";
+import { defaultBranch } from "./gitctx.ts";
 
 function logDecision(sessionId: string | null, command: string, d: Decision): void {
   try {
@@ -32,12 +33,16 @@ function logDecision(sessionId: string | null, command: string, d: Decision): vo
 
 const input = await readHookInput<{
   session_id?: string;
+  cwd?: string;
   tool_name?: string;
   tool_input?: { command?: string };
 }>();
 
 const command = input.tool_input?.command ?? "";
-const d = evaluate(command);
+// Protect the repo's real default branch (e.g. "develop"), plus main/master as a safety net.
+const def = defaultBranch(input.cwd ?? process.cwd());
+const protectedBranches = [...new Set([def, "main", "master"].filter(Boolean) as string[])];
+const d = evaluate(command, protectedBranches);
 logDecision(input.session_id ?? null, command, d);
 
 if (d.decision === "deny") {

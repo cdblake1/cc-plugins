@@ -27,8 +27,17 @@ Opt-in: does nothing until the user configures a command, so no slowdown by defa
 - [x] Bump plugin version 0.1.0 → 0.2.0
 - [x] Docs: README (userConfig + gating), CLAUDE.md (v2 notes), CHANGELOG
 
+## v3 — git-aware memory (shipped, PR #4, v0.3.0)
+- [x] `gitctx.ts` — `gitContext` / `defaultBranch` / pure `normalizeRepo` (bundled + used by hooks)
+- [x] Schema + first migration: `repo`/`branch`/`commit_sha` on `sessions`, `repo` on `notes` (`addColumnIfMissing`)
+- [x] **Auto-recall** SessionStart hook injects this repo's recent notes into context
+- [x] Repo-scoped `store`/`recall` (server reads `CLAUDE_PROJECT_DIR`); `recall` gains `scope: repo|all`
+- [x] Guardrail uses the repo's dynamic default branch (∪ main/master)
+- [x] Tests: `gitctx.test.ts` + custom-branch guardrail cases; bundle rebuilt; CI green
+
 ## Future / backlog
 - [ ] Auto-detect dev-hygiene commands from `package.json` scripts when userConfig is unset
 - [ ] Format-on-edit (PostToolUse) — advisory or auto-fix
 - [ ] Guardrail tuning: fork bombs, `dd`/`mkfs` to devices, `chmod -R 777 /`, writes outside project dir
 - [ ] Expose the journal (`edits`/`sessions`) via an MCP tool or command
+- [ ] UserPromptSubmit per-prompt recall (more targeted surfacing)

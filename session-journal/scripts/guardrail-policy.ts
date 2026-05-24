@@ -29,7 +29,15 @@ function rmHitsDangerousTarget(command: string): boolean {
   return false;
 }
 
-export function evaluate(commandRaw: string): Decision {
+/** Escape a branch name for safe inclusion in a RegExp. */
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+export function evaluate(
+  commandRaw: string,
+  protectedBranches: string[] = ["main", "master"],
+): Decision {
   const c = (commandRaw ?? "").trim();
   if (!c) return { decision: "allow", reason: "" };
 
@@ -53,12 +61,15 @@ export function evaluate(commandRaw: string): Decision {
 
   const isGitPush = /\bgit\s+push\b/i.test(c);
   const hasForce = /(\s--force\b|\s-f\b)/i.test(c) && !/--force-with-lease\b/i.test(c);
+  const branches = protectedBranches.filter(Boolean).map(escapeRegExp);
+  const hitsProtected =
+    branches.length > 0 && new RegExp(`\\b(${branches.join("|")})\\b`, "i").test(c);
 
   // DENY: force-push to a protected branch.
-  if (isGitPush && hasForce && /\b(main|master)\b/i.test(c)) {
+  if (isGitPush && hasForce && hitsProtected) {
     return {
       decision: "deny",
-      reason: "Force-pushing to a protected branch (main/master) is blocked.",
+      reason: `Force-pushing to a protected branch (${protectedBranches.join("/")}) is blocked.`,
     };
   }
 
