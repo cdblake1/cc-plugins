@@ -57,7 +57,10 @@ function migrate(db: DatabaseSync): void {
       id          TEXT PRIMARY KEY,
       started_at  TEXT NOT NULL,
       ended_at    TEXT,
-      cwd         TEXT
+      cwd         TEXT,
+      repo        TEXT,
+      branch      TEXT,
+      commit_sha  TEXT
     );
 
     CREATE TABLE IF NOT EXISTS edits (
@@ -71,6 +74,7 @@ function migrate(db: DatabaseSync): void {
     CREATE TABLE IF NOT EXISTS notes (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       session_id  TEXT,
+      repo        TEXT,
       key         TEXT,
       body        TEXT NOT NULL,
       ts          TEXT NOT NULL
@@ -99,4 +103,19 @@ function migrate(db: DatabaseSync): void {
     CREATE INDEX IF NOT EXISTS idx_notes_key     ON notes(key);
     CREATE INDEX IF NOT EXISTS idx_checks_session ON checks(session_id);
   `);
+
+  // Migrate DBs created before v3: add git-scoping columns if missing, then index notes.repo.
+  addColumnIfMissing(db, "sessions", "repo", "TEXT");
+  addColumnIfMissing(db, "sessions", "branch", "TEXT");
+  addColumnIfMissing(db, "sessions", "commit_sha", "TEXT");
+  addColumnIfMissing(db, "notes", "repo", "TEXT");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_notes_repo ON notes(repo);");
+}
+
+/** Add a column only if it isn't already present (SQLite has no ADD COLUMN IF NOT EXISTS). */
+function addColumnIfMissing(db: DatabaseSync, table: string, col: string, decl: string): void {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  if (!cols.some((c) => c.name === col)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${decl}`);
+  }
 }

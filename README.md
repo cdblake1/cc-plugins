@@ -25,13 +25,16 @@ survives plugin updates and reinstalls):
 - **Journal** — hooks record every file edit and session boundary.
   - `SessionStart` / `SessionEnd` write `sessions` rows; `PostToolUse` (Write/Edit/MultiEdit)
     writes `edits` rows.
-- **Memory** — an MCP server exposing two tools backed by the same store:
-  - `mcp__session-journal__store` — persist a note (optional `key`).
-  - `mcp__session-journal__recall` — fetch notes, filter by `key` / `query`.
+- **Memory (git-aware)** — an MCP server backed by the same store, scoped by repository:
+  - `mcp__session-journal__store` — persist a note (optional `key`); auto-tagged with the current repo.
+  - `mcp__session-journal__recall` — fetch notes; defaults to the current repo (+ un-scoped notes),
+    `scope:'all'` searches everywhere. Filter by `key` / `query`.
+  - **Auto-recall:** a `SessionStart` hook injects this repo's recent notes into context at the
+    start of every session — so memory reaches the model without being asked.
 - **Guardrails** — a `PreToolUse` (Bash) hook that **hard-blocks** dangerous commands
-  (`rm -rf` of `/`·`~`·`$HOME`·`..`, piping a download into a shell, force-pushing to
-  `main`/`master`), asks on softer risks (other force-pushes, `sudo`), and logs every
-  decision.
+  (`rm -rf` of `/`·`~`·`$HOME`·`..`, piping a download into a shell, force-pushing to the repo's
+  **default branch** — detected dynamically, e.g. `main`/`develop`), asks on softer risks (other
+  force-pushes, `sudo`), and logs every decision.
 - **Dev-hygiene gating** (opt-in) — a `Stop` hook runs your configured `format`/`lint`/`test`
   commands when Claude finishes; if any fail, the turn is **blocked** until they pass. Results
   are logged to a `checks` table. Off by default (runs nothing until you configure a command).
@@ -41,7 +44,7 @@ survives plugin updates and reinstalls):
 - Slash command **`/journal [note or query]`** — store a note and/or recall recent ones.
 - Slash command **`/hygiene`** — run your configured dev-hygiene checks on demand.
 - Subagent **`journal-keeper`** — remembers and recalls cross-session context.
-- MCP server **`session-journal`** — the `store` / `recall` tools above.
+- MCP server **`session-journal`** — the `store` / `recall` tools above (repo-scoped).
 
 ### Configuration (dev-hygiene gating)
 

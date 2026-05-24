@@ -34,8 +34,25 @@ for (const [cmd, want] of cases) {
   }
 }
 
+// v3: custom protected branches (dynamic default-branch detection).
+const customCases: Array<[string, string[], "allow" | "ask" | "deny"]> = [
+  ["git push --force origin develop", ["develop"], "deny"], // develop is protected here
+  ["git push --force origin develop", ["main", "master"], "ask"], // not protected by default
+  ["git push --force origin main", ["develop"], "ask"], // only develop protected -> main not denied
+  ["git push -f origin release/1.0", ["release/1.0"], "deny"], // branch name with regex-special chars
+];
+let total = cases.length;
+for (const [cmd, branches, want] of customCases) {
+  total++;
+  const got = evaluate(cmd, branches).decision;
+  if (got !== want) {
+    failed++;
+    console.error(`FAIL  want=${want} got=${got}  ${cmd}  protected=${branches.join(",")}`);
+  }
+}
+
 if (failed > 0) {
-  console.error(`\nguardrail: ${failed}/${cases.length} cases FAILED`);
+  console.error(`\nguardrail: ${failed}/${total} cases FAILED`);
   process.exit(1);
 }
-console.log(`guardrail: ${cases.length}/${cases.length} cases pass`);
+console.log(`guardrail: ${total}/${total} cases pass`);

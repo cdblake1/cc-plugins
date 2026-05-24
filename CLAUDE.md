@@ -51,6 +51,22 @@ Deliberate, validated deviations from the locked stack:
 - Adding the `checks` table to `db.ts` changed the MCP bundle (db.ts is inlined) → rebuilt;
   CI's bundle-in-sync check enforces it.
 
+## v3 implementation notes (git-aware memory — shipped)
+- **Auto-recall (closes the store→recall loop):** a 2nd SessionStart hook
+  (`hook-session-start-recall.ts`) resolves the repo via `gitctx` and prints this repo's recent
+  notes to stdout, which SessionStart injects into context. Best-effort, bounded (~10 notes / 2 KB),
+  never blocks.
+- **Repo scoping:** `notes`/`sessions` are tagged with repo (+ branch/commit). The MCP server derives
+  the repo from `CLAUDE_PROJECT_DIR` (added to `.mcp.json` env); `store` tags `notes.repo`, `recall`
+  defaults to `repo = current OR repo IS NULL` with `scope:'all'` to override. Repo id = normalized
+  remote URL (`owner/name`), falling back to the git toplevel dir name.
+- **First real migration:** `db.ts` `addColumnIfMissing` (via `PRAGMA table_info`) adds the new columns
+  to pre-v3 DBs (verified PRAGMA works through `node:sqlite` `prepare().all()`).
+- **Dynamic default branch:** `evaluate(command, protectedBranches)` stays pure; the guardrail hook
+  computes the repo's real default via `gitctx.defaultBranch()` (∪ main/master fallback) and passes it in.
+- `gitctx.ts` is inlined into the bundle (imported by `server.ts`) → rebuild required. Its pure
+  `normalizeRepo`/`parseDefaultBranchRef` are unit-tested; git calls are best-effort (never throw).
+
 ## Verified mechanics (confirmed against code.claude.com/docs/en/plugins-reference — trust these)
 - **Layout:** ONLY `plugin.json` goes in `.claude-plugin/`. Every component dir (`commands/`,
   `agents/`, `hooks/`, `skills/`, `.mcp.json`) lives at the **plugin root**.

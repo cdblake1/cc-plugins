@@ -8,8 +8,14 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { openDb, now } from "../scripts/db.ts";
+import { gitContext } from "../scripts/gitctx.ts";
 
-const server = new McpServer({ name: "session-journal", version: "0.1.0" });
+const server = new McpServer({ name: "session-journal", version: "0.3.0" });
+
+// Repo this server is scoped to, derived from the project dir (exported by Claude Code).
+// Used to tag stored notes and to scope recall by default.
+const PROJECT_DIR = process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
+const CURRENT_REPO = gitContext(PROJECT_DIR).repo;
 
 server.registerTool(
   "store",
@@ -17,7 +23,8 @@ server.registerTool(
     title: "Store a note",
     description:
       "Persist a note to cross-session memory. Use for facts, decisions, or context " +
-      "that should survive across Claude Code sessions.",
+      "that should survive across Claude Code sessions. Notes are tagged with the current " +
+      "repository so they surface automatically in future sessions on the same repo.",
     inputSchema: {
       body: z.string().min(1).describe("The note content to remember."),
       key: z.string().optional().describe("Optional label to group and look up related notes."),
@@ -26,8 +33,9 @@ server.registerTool(
   async ({ body, key }) => {
     const db = openDb();
     try {
-      db.prepare("INSERT INTO notes (session_id, key, body, ts) VALUES (?, ?, ?, ?)").run(
+      db.prepare("INSERT INTO notes (session_id, repo, key, body, ts) VALUES (?, ?, ?, ?, ?)").run(
         null,
+        CURRENT_REPO,
         key ?? null,
         body,
         now(),
@@ -35,8 +43,9 @@ server.registerTool(
     } finally {
       db.close();
     }
+    const scopeNote = CURRENT_REPO ? ` for ${CURRENT_REPO}` : "";
     return {
-      content: [{ type: "text", text: `Stored note${key ? ` under key "${key}"` : ""}.` }],
+      content: [{ type: "text", text: `Stored note${key ? ` under key "${key}"` : ""}${scopeNote}.` }],
     };
   },
 );
@@ -46,11 +55,16 @@ server.registerTool(
   {
     title: "Recall notes",
     description:
-      "Retrieve previously stored notes from cross-session memory. Filter by key and/or a " +
-      "text query; returns most recent first.",
+      "Retrieve previously stored notes from cross-session memory. By default returns notes " +
+      "for the current repository (plus un-scoped notes); pass scope:'all' to search every repo. " +
+      "Filter by key and/or a text query; returns most recent first.",
     inputSchema: {
       key: z.string().optional().describe("Only return notes stored under this key."),
       query: z.string().optional().describe("Case-insensitive substring to match in note bodies."),
+      scope: z
+        .enum(["repo", "all"])
+        .optional()
+        .describe("'repo' (default) = current repo + un-scoped notes; 'all' = every repo."),
       limit: z
         .number()
         .int()
@@ -60,11 +74,16 @@ server.registerTool(
         .describe("Max notes to return (default 20)."),
     },
   },
-  async ({ key, query, limit }) => {
+  async ({ key, query, scope, limit }) => {
     const db = openDb();
     try {
       const clauses: string[] = [];
       const params: (string | number)[] = [];
+      // Repo scoping (default). Skipped when scope='all' or when we can't tell the repo.
+      if (scope !== "all" && CURRENT_REPO) {
+        clauses.push("(repo = ? OR repo IS NULL)");
+        params.push(CURRENT_REPO);
+      }
       if (key) {
         clauses.push("key = ?");
         params.push(key);
@@ -75,9 +94,10 @@ server.registerTool(
       }
       const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
       const rows = db
-        .prepare(`SELECT id, key, body, ts FROM notes ${where} ORDER BY id DESC LIMIT ?`)
+        .prepare(`SELECT id, repo, key, body, ts FROM notes ${where} ORDER BY id DESC LIMIT ?`)
         .all(...params, limit ?? 20) as Array<{
         id: number;
+        repo: string | null;
         key: string | null;
         body: string;
         ts: string;

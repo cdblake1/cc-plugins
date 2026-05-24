@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "session-journal",
   "displayName": "Session Journal",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Session journal, cross-session memory (store/recall), and Bash guardrails for Claude Code.",
   "author": {
     "name": "Caleb Blake"

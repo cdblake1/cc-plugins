@@ -7,6 +7,11 @@
             "type": "command",
             "command": "node --experimental-strip-types --no-warnings \"${CLAUDE_PLUGIN_ROOT}/scripts/hook-session-start.ts\"",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node --experimental-strip-types --no-warnings \"${CLAUDE_PLUGIN_ROOT}/scripts/hook-session-start-recall.ts\"",
+            "timeout": 10
           }
         ]
       }

@@ -21130,7 +21130,10 @@ function migrate(db) {
       id          TEXT PRIMARY KEY,
       started_at  TEXT NOT NULL,
       ended_at    TEXT,
-      cwd         TEXT
+      cwd         TEXT,
+      repo        TEXT,
+      branch      TEXT,
+      commit_sha  TEXT
     );
 
     CREATE TABLE IF NOT EXISTS edits (
@@ -21144,6 +21147,7 @@ function migrate(db) {
     CREATE TABLE IF NOT EXISTS notes (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       session_id  TEXT,
+      repo        TEXT,
       key         TEXT,
       body        TEXT NOT NULL,
       ts          TEXT NOT NULL
@@ -21172,15 +21176,66 @@ function migrate(db) {
     CREATE INDEX IF NOT EXISTS idx_notes_key     ON notes(key);
     CREATE INDEX IF NOT EXISTS idx_checks_session ON checks(session_id);
   `);
+  addColumnIfMissing(db, "sessions", "repo", "TEXT");
+  addColumnIfMissing(db, "sessions", "branch", "TEXT");
+  addColumnIfMissing(db, "sessions", "commit_sha", "TEXT");
+  addColumnIfMissing(db, "notes", "repo", "TEXT");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_notes_repo ON notes(repo);");
+}
+function addColumnIfMissing(db, table, col, decl) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (!cols.some((c) => c.name === col)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${decl}`);
+  }
+}
+
+// scripts/gitctx.ts
+import { execSync } from "node:child_process";
+import { basename } from "node:path";
+function run(cmd, cwd) {
+  try {
+    const out = execSync(cmd, {
+      cwd,
+      encoding: "utf8",
+      timeout: 5e3,
+      stdio: ["ignore", "pipe", "ignore"]
+    });
+    return out.trim() || null;
+  } catch {
+    return null;
+  }
+}
+function normalizeRepo(urlOrPath) {
+  let s = (urlOrPath ?? "").trim();
+  if (!s) return s;
+  s = s.replace(/^[a-z][a-z0-9+.-]*:\/\//i, "");
+  s = s.replace(/^[^@/]+@/, "");
+  s = s.replace(":", "/");
+  s = s.replace(/\.git$/i, "");
+  const parts = s.split("/").filter(Boolean);
+  return parts.length >= 3 ? parts.slice(-2).join("/") : parts.join("/");
+}
+function gitContext(cwd) {
+  const root = run("git rev-parse --show-toplevel", cwd);
+  if (!root) return { repo: null, branch: null, commit: null };
+  const remote = run("git config --get remote.origin.url", cwd);
+  const repo = remote ? normalizeRepo(remote) : basename(root);
+  return {
+    repo: repo || null,
+    branch: run("git rev-parse --abbrev-ref HEAD", cwd),
+    commit: run("git rev-parse --short HEAD", cwd)
+  };
 }
 
 // mcp/server.ts
-var server = new McpServer({ name: "session-journal", version: "0.1.0" });
+var server = new McpServer({ name: "session-journal", version: "0.3.0" });
+var PROJECT_DIR = process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
+var CURRENT_REPO = gitContext(PROJECT_DIR).repo;
 server.registerTool(
   "store",
   {
     title: "Store a note",
-    description: "Persist a note to cross-session memory. Use for facts, decisions, or context that should survive across Claude Code sessions.",
+    description: "Persist a note to cross-session memory. Use for facts, decisions, or context that should survive across Claude Code sessions. Notes are tagged with the current repository so they surface automatically in future sessions on the same repo.",
     inputSchema: {
       body: external_exports.string().min(1).describe("The note content to remember."),
       key: external_exports.string().optional().describe("Optional label to group and look up related notes.")
@@ -21189,8 +21244,9 @@ server.registerTool(
   async ({ body, key }) => {
     const db = openDb();
     try {
-      db.prepare("INSERT INTO notes (session_id, key, body, ts) VALUES (?, ?, ?, ?)").run(
+      db.prepare("INSERT INTO notes (session_id, repo, key, body, ts) VALUES (?, ?, ?, ?, ?)").run(
         null,
+        CURRENT_REPO,
         key ?? null,
         body,
         now()
@@ -21198,8 +21254,9 @@ server.registerTool(
     } finally {
       db.close();
     }
+    const scopeNote = CURRENT_REPO ? ` for ${CURRENT_REPO}` : "";
     return {
-      content: [{ type: "text", text: `Stored note${key ? ` under key "${key}"` : ""}.` }]
+      content: [{ type: "text", text: `Stored note${key ? ` under key "${key}"` : ""}${scopeNote}.` }]
     };
   }
 );
@@ -21207,18 +21264,23 @@ server.registerTool(
   "recall",
   {
     title: "Recall notes",
-    description: "Retrieve previously stored notes from cross-session memory. Filter by key and/or a text query; returns most recent first.",
+    description: "Retrieve previously stored notes from cross-session memory. By default returns notes for the current repository (plus un-scoped notes); pass scope:'all' to search every repo. Filter by key and/or a text query; returns most recent first.",
     inputSchema: {
       key: external_exports.string().optional().describe("Only return notes stored under this key."),
       query: external_exports.string().optional().describe("Case-insensitive substring to match in note bodies."),
+      scope: external_exports.enum(["repo", "all"]).optional().describe("'repo' (default) = current repo + un-scoped notes; 'all' = every repo."),
       limit: external_exports.number().int().positive().max(100).optional().describe("Max notes to return (default 20).")
     }
   },
-  async ({ key, query, limit }) => {
+  async ({ key, query, scope, limit }) => {
     const db = openDb();
     try {
       const clauses = [];
       const params = [];
+      if (scope !== "all" && CURRENT_REPO) {
+        clauses.push("(repo = ? OR repo IS NULL)");
+        params.push(CURRENT_REPO);
+      }
       if (key) {
         clauses.push("key = ?");
         params.push(key);
@@ -21228,7 +21290,7 @@ server.registerTool(
         params.push(`%${query}%`);
       }
       const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
-      const rows = db.prepare(`SELECT id, key, body, ts FROM notes ${where} ORDER BY id DESC LIMIT ?`).all(...params, limit ?? 20);
+      const rows = db.prepare(`SELECT id, repo, key, body, ts FROM notes ${where} ORDER BY id DESC LIMIT ?`).all(...params, limit ?? 20);
       if (rows.length === 0) {
         return { content: [{ type: "text", text: "No matching notes." }] };
       }
