@@ -67,6 +67,15 @@ Deliberate, validated deviations from the locked stack:
 - `gitctx.ts` is inlined into the bundle (imported by `server.ts`) → rebuild required. Its pure
   `normalizeRepo`/`parseDefaultBranchRef` are unit-tested; git calls are best-effort (never throw).
 
+## v4 implementation notes (guardrail hardening + journal tool — shipped)
+- **Guardrail additions** (pure, in `guardrail-policy.ts`): fork bombs (self-piping function via a
+  backreference), `dd of=/dev/<disk>`, `mkfs* /dev/*`, recursive `chmod 777` on a catastrophic target.
+  The dangerous-target check was generalized to `hasDangerousTargetAfter(command, name)` (skips octal
+  modes so chmod reuses it). 33 unit cases.
+- **`journal` MCP tool:** lists recent `edits` JOINed to `sessions` filtered by the current repo
+  (strict `s.repo = current` — no cross-repo leakage of file paths). Bundle rebuild.
+- Still deferred: guardrail "writes outside the project dir" (too false-positive-prone for static parsing).
+
 ## Verified mechanics (confirmed against code.claude.com/docs/en/plugins-reference — trust these)
 - **Layout:** ONLY `plugin.json` goes in `.claude-plugin/`. Every component dir (`commands/`,
   `agents/`, `hooks/`, `skills/`, `.mcp.json`) lives at the **plugin root**.

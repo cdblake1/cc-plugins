@@ -35,9 +35,12 @@ Opt-in: does nothing until the user configures a command, so no slowdown by defa
 - [x] Guardrail uses the repo's dynamic default branch (∪ main/master)
 - [x] Tests: `gitctx.test.ts` + custom-branch guardrail cases; bundle rebuilt; CI green
 
+## v4 — hardening + journal read (shipped, PR #5, v0.4.0)
+- [x] Guardrail: fork bombs, `dd`/`mkfs` to block devices, recursive `chmod 777` on system paths (33 test cases)
+- [x] `journal` MCP tool — recent edits for the current repo (repo-scoped JOIN)
+
 ## Future / backlog
 - [ ] Auto-detect dev-hygiene commands from `package.json` scripts when userConfig is unset
 - [ ] Format-on-edit (PostToolUse) — advisory or auto-fix
-- [ ] Guardrail tuning: fork bombs, `dd`/`mkfs` to devices, `chmod -R 777 /`, writes outside project dir
-- [ ] Expose the journal (`edits`/`sessions`) via an MCP tool or command
+- [ ] Guardrail: "writes outside the project dir" rule (deferred — static parsing too false-positive-prone)
 - [ ] UserPromptSubmit per-prompt recall (more targeted surfacing)

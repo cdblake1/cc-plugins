@@ -15,14 +15,19 @@ const DANGEROUS_RM_TARGETS = new Set([
   "${HOME}",
 ]);
 
-/** Crude whitespace tokenization — good enough for guardrail heuristics. */
-function rmHitsDangerousTarget(command: string): boolean {
+/**
+ * Crude whitespace tokenization — good enough for guardrail heuristics. Finds `cmd`, then
+ * checks whether any following non-flag, non-mode argument is a catastrophic target
+ * (/, ~, $HOME, ..). Skips octal modes so `chmod` can reuse it.
+ */
+function hasDangerousTargetAfter(command: string, cmd: string): boolean {
   const tokens = command.split(/\s+/);
-  const rmIdx = tokens.findIndex((t) => t === "rm" || t.endsWith("/rm"));
-  if (rmIdx === -1) return false;
-  for (let i = rmIdx + 1; i < tokens.length; i++) {
+  const idx = tokens.findIndex((t) => t === cmd || t.endsWith(`/${cmd}`));
+  if (idx === -1) return false;
+  for (let i = idx + 1; i < tokens.length; i++) {
     const t = tokens[i];
-    if (t.startsWith("-")) continue; // a flag, not a target
+    if (t.startsWith("-")) continue; // a flag
+    if (/^[0-7]{3,4}$/.test(t)) continue; // an octal mode, e.g. chmod 777
     const normalized = t.replace(/\/+$/, "") || "/"; // strip trailing slashes (keep "/")
     if (DANGEROUS_RM_TARGETS.has(t) || DANGEROUS_RM_TARGETS.has(normalized)) return true;
   }
@@ -49,10 +54,29 @@ export function evaluate(
     };
   }
 
+  // DENY: fork bomb — a function that pipes itself, e.g. :(){ :|:& };:
+  if (/(^|[\s;&|])([a-zA-Z_:][\w:]*)\s*\(\)\s*\{[^}]*\2\s*\|\s*\2[^}]*&[^}]*\}/.test(c)) {
+    return { decision: "deny", reason: "Fork bomb pattern is blocked." };
+  }
+
+  // DENY: writing an image straight to a block device, or formatting one.
+  if (/\bdd\b[^|;&\n]*\bof=\/dev\/(sd|nvme|vd|hd|disk|mmcblk|loop)\w*/i.test(c)) {
+    return { decision: "deny", reason: "dd writing to a block device is blocked." };
+  }
+  if (/\bmkfs(\.\w+)?\b[^|;&\n]*\/dev\/\w+/i.test(c)) {
+    return { decision: "deny", reason: "Formatting a block device (mkfs) is blocked." };
+  }
+
+  // DENY: recursive chmod 777 on a catastrophic target.
+  const chmodRecursive = /\bchmod\b[^|&;]*?(?:\s-[a-z]*R[a-z]*|\s--recursive)\b/i.test(c);
+  if (chmodRecursive && /\bchmod\b[^|&;]*\b777\b/i.test(c) && hasDangerousTargetAfter(c, "chmod")) {
+    return { decision: "deny", reason: "Recursive chmod 777 on /, ~, or $HOME is blocked." };
+  }
+
   // DENY: recursive + force rm targeting /, ~, $HOME, or ..
   const rmRecursive = /\brm\b[^|&;]*?(?:\s-[a-z]*r[a-z]*|\s--recursive)\b/i.test(c);
   const rmForce = /\brm\b[^|&;]*?(?:\s-[a-z]*f[a-z]*|\s--force)\b/i.test(c);
-  if (rmRecursive && rmForce && rmHitsDangerousTarget(c)) {
+  if (rmRecursive && rmForce && hasDangerousTargetAfter(c, "rm")) {
     return {
       decision: "deny",
       reason: "Recursive force-remove targeting /, ~, $HOME, or .. is blocked.",

@@ -2,6 +2,13 @@
 
 All notable changes to the **session-journal** plugin. Dates are UTC.
 
+## [0.4.0] — 2026-05-24
+### Added
+- **Guardrail hardening:** also hard-blocks fork bombs, `dd`/`mkfs` writing to a block device,
+  and recursive `chmod 777` on system paths (`/`, `~`, `$HOME`).
+- **`journal` MCP tool** (`mcp__session-journal__journal`): lists recent file edits for the current
+  repository — the activity log is now readable, not just written.
+
 ## [0.3.0] — 2026-05-24
 ### Added
 - **Git-aware memory.** Notes are tagged with the current repository; `recall` defaults to the

@@ -116,5 +116,51 @@ server.registerTool(
   },
 );
 
+server.registerTool(
+  "journal",
+  {
+    title: "Recent activity",
+    description:
+      "List recent file edits recorded for the current repository (newest first) — useful to " +
+      "recall what was changed in past sessions on this repo.",
+    inputSchema: {
+      limit: z
+        .number()
+        .int()
+        .positive()
+        .max(100)
+        .optional()
+        .describe("Max edits to return (default 20)."),
+    },
+  },
+  async ({ limit }) => {
+    if (!CURRENT_REPO) {
+      return {
+        content: [{ type: "text", text: "Not in a recognized git repository; no scoped activity." }],
+      };
+    }
+    const db = openDb();
+    try {
+      const rows = db
+        .prepare(
+          "SELECT e.tool, e.file_path, e.ts FROM edits e JOIN sessions s ON e.session_id = s.id " +
+            "WHERE s.repo = ? ORDER BY e.id DESC LIMIT ?",
+        )
+        .all(CURRENT_REPO, limit ?? 20) as Array<{
+        tool: string;
+        file_path: string | null;
+        ts: string;
+      }>;
+      if (rows.length === 0) {
+        return { content: [{ type: "text", text: `No recorded edits for ${CURRENT_REPO} yet.` }] };
+      }
+      const text = rows.map((r) => `${r.ts}  ${r.tool}  ${r.file_path ?? "(no path)"}`).join("\n");
+      return { content: [{ type: "text", text: `Recent edits for ${CURRENT_REPO}:\n${text}` }] };
+    } finally {
+      db.close();
+    }
+  },
+);
+
 const transport = new StdioServerTransport();
 await server.connect(transport);

@@ -24,7 +24,7 @@ survives plugin updates and reinstalls):
 
 - **Journal** — hooks record every file edit and session boundary.
   - `SessionStart` / `SessionEnd` write `sessions` rows; `PostToolUse` (Write/Edit/MultiEdit)
-    writes `edits` rows.
+    writes `edits` rows. Queryable via `mcp__session-journal__journal` (recent edits, this repo).
 - **Memory (git-aware)** — an MCP server backed by the same store, scoped by repository:
   - `mcp__session-journal__store` — persist a note (optional `key`); auto-tagged with the current repo.
   - `mcp__session-journal__recall` — fetch notes; defaults to the current repo (+ un-scoped notes),
@@ -33,8 +33,9 @@ survives plugin updates and reinstalls):
     start of every session — so memory reaches the model without being asked.
 - **Guardrails** — a `PreToolUse` (Bash) hook that **hard-blocks** dangerous commands
   (`rm -rf` of `/`·`~`·`$HOME`·`..`, piping a download into a shell, force-pushing to the repo's
-  **default branch** — detected dynamically, e.g. `main`/`develop`), asks on softer risks (other
-  force-pushes, `sudo`), and logs every decision.
+  **default branch** — detected dynamically, e.g. `main`/`develop`, fork bombs, `dd`/`mkfs` to a
+  block device, recursive `chmod 777` on system paths), asks on softer risks (other force-pushes,
+  `sudo`), and logs every decision.
 - **Dev-hygiene gating** (opt-in) — a `Stop` hook runs your configured `format`/`lint`/`test`
   commands when Claude finishes; if any fail, the turn is **blocked** until they pass. Results
   are logged to a `checks` table. Off by default (runs nothing until you configure a command).
@@ -44,7 +45,7 @@ survives plugin updates and reinstalls):
 - Slash command **`/journal [note or query]`** — store a note and/or recall recent ones.
 - Slash command **`/hygiene`** — run your configured dev-hygiene checks on demand.
 - Subagent **`journal-keeper`** — remembers and recalls cross-session context.
-- MCP server **`session-journal`** — the `store` / `recall` tools above (repo-scoped).
+- MCP server **`session-journal`** — `store` / `recall` (repo-scoped) + `journal` (recent edits).
 
 ### Configuration (dev-hygiene gating)
 
