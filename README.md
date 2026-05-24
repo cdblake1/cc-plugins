@@ -22,6 +22,12 @@ A [Claude Code](https://claude.com/claude-code) plugin marketplace.
 Four capabilities, one small SQLite store (at `${CLAUDE_PLUGIN_DATA}/state.db`, which
 survives plugin updates and reinstalls):
 
+> **Note — state is per install identity.** `${CLAUDE_PLUGIN_DATA}` resolves to
+> `~/.claude/plugins/data/{plugin-name}-{marketplace-name}/`, so the store is keyed by *how the
+> plugin was installed*. A local dev-load and a marketplace install (or two different marketplaces)
+> get **separate** `state.db` files — notes and journal history do not transfer between them.
+> Switching install method starts from an empty store. This is inherent to Claude Code, not a bug.
+
 - **Journal** — hooks record every file edit and session boundary.
   - `SessionStart` / `SessionEnd` write `sessions` rows; `PostToolUse` (Write/Edit/MultiEdit)
     writes `edits` rows. Queryable via `mcp__session-journal__journal` (recent edits, this repo).
