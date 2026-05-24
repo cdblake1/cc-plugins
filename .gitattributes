@@ -1,0 +1,3 @@
+# Normalize line endings to LF for all text files so the committed esbuild bundle
+# stays byte-stable across platforms (and the CI bundle-in-sync check is reliable).
+* text=auto eol=lf
