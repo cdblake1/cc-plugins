@@ -39,8 +39,20 @@ Opt-in: does nothing until the user configures a command, so no slowdown by defa
 - [x] Guardrail: fork bombs, `dd`/`mkfs` to block devices, recursive `chmod 777` on system paths (33 test cases)
 - [x] `journal` MCP tool — recent edits for the current repo (repo-scoped JOIN)
 
+## v5 — auto-capture + handoff (shipped, v0.5.0)
+Closes the capture gap: the store no longer depends on someone remembering to write a note.
+Feasibility-verified first (model-invoking `agent` hooks are REPL-only; `command` hooks run in
+headless `-p` and `SessionEnd` blocks on them → use a deterministic `command`-hook rollup).
+- [x] `/checkpoint` command — model writes a Goal/Done/Open/Next/Watch handoff, stored under key `checkpoint`
+- [x] Deterministic `SessionEnd` rollup note (key `session-rollup`) from journal data; opt out via `auto_rollup = "off"`
+- [x] Handoff at `SessionStart`: auto-recall leads with the latest checkpoint/rollup, then earlier notes
+- [x] Pure `rollup.ts` + unit tests; no schema/bundle change (reuses `store` + `notes`)
+
 ## Future / backlog
+- [ ] **Tier 2 — per-prompt recall** (`UserPromptSubmit` hook + SQLite FTS5 ranking) for targeted surfacing
+- [ ] **Tier 1 (opt-in) — model narrative rollup**: `SessionEnd` `command` hook shells to `claude -p`
+      for a written summary (needs a re-entrancy guard; nested `-p` re-fires hooks)
+- [ ] **Tier 3 — note lifecycle**: `expires_at` / `superseded_by` / done-marking; recall filters stale
 - [ ] Auto-detect dev-hygiene commands from `package.json` scripts when userConfig is unset
 - [ ] Format-on-edit (PostToolUse) — advisory or auto-fix
 - [ ] Guardrail: "writes outside the project dir" rule (deferred — static parsing too false-positive-prone)
-- [ ] UserPromptSubmit per-prompt recall (more targeted surfacing)

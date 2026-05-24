@@ -35,8 +35,12 @@ survives plugin updates and reinstalls):
   - `mcp__session-journal__store` — persist a note (optional `key`); auto-tagged with the current repo.
   - `mcp__session-journal__recall` — fetch notes; defaults to the current repo (+ un-scoped notes),
     `scope:'all'` searches everywhere. Filter by `key` / `query`.
-  - **Auto-recall:** a `SessionStart` hook injects this repo's recent notes into context at the
-    start of every session — so memory reaches the model without being asked.
+  - **Auto-capture** — memory no longer depends on remembering to save. `/checkpoint` has the model
+    write a structured handoff (Goal / Done / Open / Next / Watch), and the `SessionEnd` hook writes
+    a deterministic rollup (files touched, edit count, branch, duration) whenever a session made
+    edits. The rollup is pure SQLite (works headless too); disable it with `auto_rollup = "off"`.
+  - **Handoff at start:** the `SessionStart` hook leads with your most recent checkpoint/rollup
+    ("picking up … last session: …"), then earlier notes — so a new session opens where you left off.
 - **Guardrails** — a `PreToolUse` (Bash) hook that **hard-blocks** dangerous commands
   (`rm -rf` of `/`·`~`·`$HOME`·`..`, piping a download into a shell, force-pushing to the repo's
   **default branch** — detected dynamically, e.g. `main`/`develop`, fork bombs, `dd`/`mkfs` to a
@@ -49,6 +53,7 @@ survives plugin updates and reinstalls):
 ### Components
 
 - Slash command **`/journal [note or query]`** — store a note and/or recall recent ones.
+- Slash command **`/checkpoint`** — summarize the current session and save it as a handoff for next time.
 - Slash command **`/hygiene`** — run your configured dev-hygiene checks on demand.
 - Subagent **`journal-keeper`** — remembers and recalls cross-session context.
 - MCP server **`session-journal`** — `store` / `recall` (repo-scoped) + `journal` (recent edits).
@@ -66,6 +71,12 @@ Set any of these in the plugin's configuration (prompted at enable time, or via
 
 The gate fires once per turn-chain (gated on `stop_hook_active`), giving Claude one shot to
 fix failures before the turn can end. Keep the commands reasonably fast.
+
+One more option, unrelated to gating:
+
+| Option | Value | Effect |
+| :----- | :---- | :----- |
+| `auto_rollup` | `off` | Disable the automatic end-of-session rollup note. Enabled by default (a rollup is written only when the session made edits). |
 
 ### Requirements
 
