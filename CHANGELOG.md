@@ -2,6 +2,27 @@
 
 All notable changes to the **session-journal** plugin. Dates are UTC.
 
+## [0.5.0] — 2026-05-24
+### Added
+- **Auto-capture (closes the capture gap).** Memory no longer depends on someone remembering to
+  store a note:
+  - **`/checkpoint` command** — the model writes a structured handoff (Goal / Done / Open / Next /
+    Watch) and saves it under key `checkpoint`.
+  - **Automatic session rollup** — the `SessionEnd` hook writes a deterministic note (files
+    touched, edit count, branch/commit, duration) under key `session-rollup` whenever the session
+    made edits. Pure SQLite, no model — works in headless/CI runs too. Opt out with
+    userConfig `auto_rollup = "off"`.
+- **Handoff at start.** The `SessionStart` auto-recall hook now leads with the most recent
+  `checkpoint`/`session-rollup` ("picking up … last session: …"), then lists earlier notes — so a
+  new session opens with where you left off.
+- `scripts/rollup.ts` (pure rollup formatting) + unit tests (`rollup.test.ts`).
+
+### Notes
+- No schema or bundle change: `/checkpoint` reuses the existing `store` tool and the rollup writes
+  to the existing `notes` table.
+- Feasibility-verified beforehand: model-invoking `agent` hooks are REPL-only, but `command` hooks
+  run (and `SessionEnd` blocks on them) in headless `-p` runs — hence the deterministic rollup.
+
 ## [0.4.0] — 2026-05-24
 ### Added
 - **Guardrail hardening:** also hard-blocks fork bombs, `dd`/`mkfs` writing to a block device,
