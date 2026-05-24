@@ -23,6 +23,18 @@ const cases: Array<[string, "allow" | "ask" | "deny"]> = [
   ["ls -la", "allow"],
   ["git push origin main", "allow"],
   ["echo hello", "allow"],
+  // v4 hardening
+  [":(){ :|:& };:", "deny"], // classic fork bomb
+  ["bomb(){ bomb|bomb& };bomb", "deny"], // named fork bomb
+  ["dd if=/dev/zero of=/dev/sda bs=1M", "deny"],
+  ["sudo dd if=img.iso of=/dev/nvme0n1", "deny"],
+  ["mkfs.ext4 /dev/sdb1", "deny"],
+  ["chmod -R 777 /", "deny"],
+  ["chmod -R 777 ~", "deny"],
+  ["chmod -R 777 ./build", "allow"], // recursive 777 but safe target
+  ["dd if=a.img of=./backup.img", "allow"], // not a block device
+  ["mkfs.ext4 /tmp/loopfile", "allow"], // not /dev/*
+  ["deploy() { echo go; }", "allow"], // ordinary function, not a fork bomb
 ];
 
 let failed = 0;
