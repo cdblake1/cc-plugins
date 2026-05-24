@@ -4,9 +4,10 @@
 // The rollup is plain SQLite (no model invocation) so it works everywhere, including headless
 // `-p`/CI runs where model-invoking `agent` hooks are unsupported. SessionEnd blocks on command
 // hooks, so this completes before teardown. Opt out by setting userConfig auto_rollup = "off".
+import { existsSync } from "node:fs";
 import { openDb, now } from "./db.ts";
 import { readHookInput } from "./hooklib.ts";
-import { formatRollup, type EditRow, type SessionRow } from "./rollup.ts";
+import { formatRollup, liveEdits, type EditRow, type SessionRow } from "./rollup.ts";
 
 try {
   const input = await readHookInput<{ session_id?: string }>();
@@ -27,7 +28,9 @@ try {
           const edits = db
             .prepare("SELECT tool, file_path, ts FROM edits WHERE session_id = ? ORDER BY id ASC")
             .all(id) as EditRow[];
-          const body = formatRollup({ ...session, ended_at: endedAt }, edits);
+          // Drop edits to files deleted during the session (scratch/temp churn) so the rollup
+          // reflects what actually persists.
+          const body = formatRollup({ ...session, ended_at: endedAt }, liveEdits(edits, existsSync));
           if (body) {
             db.prepare(
               "INSERT INTO notes (session_id, repo, key, body, ts) VALUES (?, ?, ?, ?, ?)",

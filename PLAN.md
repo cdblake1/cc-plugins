@@ -47,6 +47,7 @@ headless `-p` and `SessionEnd` blocks on them → use a deterministic `command`-
 - [x] Deterministic `SessionEnd` rollup note (key `session-rollup`) from journal data; opt out via `auto_rollup = "off"`
 - [x] Handoff at `SessionStart`: auto-recall leads with the latest checkpoint/rollup, then earlier notes
 - [x] Pure `rollup.ts` + unit tests; no schema/bundle change (reuses `store` + `notes`)
+- [x] v0.5.1: handoff prefers `checkpoint` over auto `session-rollup`; rollup drops files deleted mid-session (`liveEdits`)
 
 ## Future / backlog
 - [ ] **Tier 2 — per-prompt recall** (`UserPromptSubmit` hook + SQLite FTS5 ranking) for targeted surfacing

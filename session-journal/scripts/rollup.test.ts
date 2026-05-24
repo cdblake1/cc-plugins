@@ -1,5 +1,5 @@
 // Unit tests for the pure rollup formatting (v5 auto-capture). Run via `npm test`.
-import { formatDuration, baseName, formatRollup, type EditRow } from "./rollup.ts";
+import { formatDuration, baseName, formatRollup, liveEdits, type EditRow } from "./rollup.ts";
 
 let failed = 0;
 function eq(name: string, got: string | null, want: string | null): void {
@@ -62,6 +62,29 @@ eq(
   "rollup-null-paths",
   formatRollup({ started_at: null, ended_at: null, branch: null, commit_sha: null }, [edit(null), edit(null)]),
   "Auto session rollup — 2 edits across 0 files.",
+);
+
+// liveEdits — drop edits whose file no longer exists; keep extant files and null paths.
+const keep = new Set(["/x/a.ts", "/x/c.ts"]);
+const exists = (p: string) => keep.has(p);
+const mixed: EditRow[] = [edit("/x/a.ts"), edit("/x/gone.ts"), edit(null), edit("/x/c.ts")];
+const live = liveEdits(mixed, exists);
+eq("live-count", String(live.length), "3"); // a.ts, null, c.ts (gone.ts dropped)
+eq(
+  "live-paths",
+  live.map((e) => e.file_path).join(","),
+  "/x/a.ts,,/x/c.ts",
+);
+eq("live-none-exist", String(liveEdits([edit("/x/gone.ts")], exists).length), "0");
+
+// Integration: liveEdits → formatRollup drops the deleted file from the summary.
+eq(
+  "live-then-format",
+  formatRollup(
+    { started_at: null, ended_at: null, branch: null, commit_sha: null },
+    liveEdits([edit("/x/a.ts"), edit("/x/gone.ts")], exists),
+  ),
+  "Auto session rollup — 1 edit across 1 file: a.ts.",
 );
 
 if (failed > 0) {
