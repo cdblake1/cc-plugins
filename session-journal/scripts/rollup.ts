@@ -1,7 +1,13 @@
-// Pure formatting for the v5 auto-capture rollup (the deterministic end-of-session note).
-// Kept side-effect-free so it can be unit-tested without a DB; the SessionEnd hook supplies
-// the rows it reads from SQLite. Mirrors the project's pattern of extracting pure logic
-// (see guardrail-policy.ts / checks.ts) and testing it directly.
+// Rollup helpers for the v5 auto-capture (the deterministic end-of-session note).
+// The top half is pure formatting (unit-tested without a DB); the bottom half is a single
+// DB-touching retention helper (unit-tested against a tmp SQLite, like mcp/handlers.ts).
+
+import type { DatabaseSync } from "node:sqlite";
+
+/** Default retention for `session-rollup` notes per repo. The freshest rollup still surfaces
+ * via the SessionStart handoff fallback; older ones add little signal since the next session
+ * usually has its own /checkpoint. Raw activity stays searchable via the `edits` table. */
+export const ROLLUP_RETENTION = 5;
 
 export type EditRow = { tool: string; file_path: string | null; ts: string };
 export type SessionRow = {
@@ -65,4 +71,34 @@ export function formatRollup(session: SessionRow, edits: EditRow[], maxFiles = 8
   const fileList = files.length ? `: ${shown.join(", ")}${more}` : "";
 
   return `Auto session rollup${ctx ? ` (${ctx})` : ""} — ${editN} across ${fileN}${fileList}.`;
+}
+
+/**
+ * Prune older `session-rollup` notes within a repo scope, keeping the `keep` most recent.
+ * Pinned rollups (rare, but if a user explicitly pinned one) are preserved unconditionally.
+ *
+ * Scope semantics match how rollups are stored: a row with `repo = null` is "no-repo session"
+ * and is pruned only against other no-repo rollups. We use `IS NOT DISTINCT FROM` so the same
+ * statement handles both cases without a NULL-vs-equality branch. Returns the number deleted.
+ */
+export function pruneOldRollups(
+  db: DatabaseSync,
+  repo: string | null,
+  keep: number = ROLLUP_RETENTION,
+): number {
+  if (keep < 0) return 0;
+  const info = db
+    .prepare(
+      `DELETE FROM notes
+       WHERE id IN (
+         SELECT id FROM notes
+         WHERE key = 'session-rollup'
+           AND repo IS NOT DISTINCT FROM ?
+           AND pinned = 0
+         ORDER BY id DESC
+         LIMIT -1 OFFSET ?
+       )`,
+    )
+    .run(repo, keep);
+  return Number(info.changes);
 }
