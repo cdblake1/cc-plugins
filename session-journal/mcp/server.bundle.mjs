@@ -21181,6 +21181,36 @@ function migrate(db) {
   addColumnIfMissing(db, "sessions", "commit_sha", "TEXT");
   addColumnIfMissing(db, "notes", "repo", "TEXT");
   db.exec("CREATE INDEX IF NOT EXISTS idx_notes_repo ON notes(repo);");
+  addColumnIfMissing(db, "notes", "pinned", "INTEGER NOT NULL DEFAULT 0");
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS note_tags (
+      note_id INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+      tag     TEXT NOT NULL,
+      PRIMARY KEY (note_id, tag)
+    );
+    CREATE INDEX IF NOT EXISTS idx_note_tags_tag ON note_tags(tag);
+
+    CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
+      body, content='notes', content_rowid='id'
+    );
+
+    -- Keep notes_fts in sync with notes.body.
+    CREATE TRIGGER IF NOT EXISTS notes_ai AFTER INSERT ON notes BEGIN
+      INSERT INTO notes_fts(rowid, body) VALUES (new.id, new.body);
+    END;
+    CREATE TRIGGER IF NOT EXISTS notes_ad AFTER DELETE ON notes BEGIN
+      INSERT INTO notes_fts(notes_fts, rowid, body) VALUES('delete', old.id, old.body);
+    END;
+    CREATE TRIGGER IF NOT EXISTS notes_au AFTER UPDATE ON notes BEGIN
+      INSERT INTO notes_fts(notes_fts, rowid, body) VALUES('delete', old.id, old.body);
+      INSERT INTO notes_fts(rowid, body) VALUES (new.id, new.body);
+    END;
+  `);
+  const userVersion = db.prepare("PRAGMA user_version").get().user_version;
+  if (userVersion < 6) {
+    db.exec("INSERT INTO notes_fts(notes_fts) VALUES('rebuild')");
+    db.exec("PRAGMA user_version = 6");
+  }
 }
 function addColumnIfMissing(db, table, col, decl) {
   const cols = db.prepare(`PRAGMA table_info(${table})`).all();
@@ -21227,75 +21257,213 @@ function gitContext(cwd) {
   };
 }
 
+// mcp/handlers.ts
+function normalizeTags(tags) {
+  if (!tags?.length) return [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const raw of tags) {
+    const t = String(raw).trim().toLowerCase();
+    if (t.length > 0) seen.add(t);
+  }
+  return [...seen];
+}
+function ftsPhrase(query) {
+  return `"${query.replace(/"/g, '""')}"`;
+}
+function handleStore(db, input, currentRepo) {
+  const tags = normalizeTags(input.tags);
+  const info = db.prepare("INSERT INTO notes (session_id, repo, key, body, ts) VALUES (?, ?, ?, ?, ?)").run(null, currentRepo, input.key ?? null, input.body, now());
+  const noteId = Number(info.lastInsertRowid);
+  if (tags.length > 0) {
+    const ins = db.prepare("INSERT OR IGNORE INTO note_tags(note_id, tag) VALUES (?, ?)");
+    for (const t of tags) ins.run(noteId, t);
+  }
+  const scopeNote = currentRepo ? ` for ${currentRepo}` : "";
+  const keyNote = input.key ? ` under key "${input.key}"` : "";
+  const tagNote = tags.length ? ` with tags [${tags.join(", ")}]` : "";
+  return `Stored note #${noteId}${keyNote}${tagNote}${scopeNote}.`;
+}
+function handleRecall(db, input, currentRepo) {
+  const clauses = [];
+  const params = [];
+  if (input.scope !== "all" && currentRepo) {
+    clauses.push("(n.repo = ? OR n.repo IS NULL)");
+    params.push(currentRepo);
+  }
+  if (input.key) {
+    clauses.push("n.key = ?");
+    params.push(input.key);
+  }
+  if (input.since) {
+    clauses.push("n.ts >= ?");
+    params.push(input.since);
+  }
+  if (input.until) {
+    clauses.push("n.ts <= ?");
+    params.push(input.until);
+  }
+  const tags = normalizeTags(input.tags);
+  if (tags.length > 0) {
+    const placeholders = tags.map(() => "?").join(", ");
+    clauses.push(`n.id IN (SELECT note_id FROM note_tags WHERE tag IN (${placeholders}))`);
+    params.push(...tags);
+  }
+  const limit = input.limit ?? 20;
+  let sql;
+  if (input.query) {
+    clauses.push("f.notes_fts MATCH ?");
+    params.push(ftsPhrase(input.query));
+    const where = `WHERE ${clauses.join(" AND ")}`;
+    sql = `SELECT n.id, n.repo, n.key, n.body, n.ts, n.pinned FROM notes_fts f JOIN notes n ON n.id = f.rowid ${where} ORDER BY n.id DESC LIMIT ?`;
+  } else {
+    const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+    sql = `SELECT n.id, n.repo, n.key, n.body, n.ts, n.pinned FROM notes n ${where} ORDER BY n.id DESC LIMIT ?`;
+  }
+  const rows = db.prepare(sql).all(...params, limit);
+  if (rows.length === 0) return "No matching notes.";
+  const tagMap = fetchTagsFor(
+    db,
+    rows.map((r) => r.id)
+  );
+  return rows.map((r) => {
+    const pin = r.pinned ? " \u{1F4CC}" : "";
+    const keyPart = r.key ? ` (${r.key})` : "";
+    const tagPart = tagMap.get(r.id)?.length ? ` [${tagMap.get(r.id).join(", ")}]` : "";
+    return `#${r.id}${pin} [${r.ts}]${keyPart}${tagPart}: ${r.body}`;
+  }).join("\n");
+}
+function handleForget(db, input) {
+  if (input.id != null) {
+    const info = db.prepare("DELETE FROM notes WHERE id = ?").run(input.id);
+    return info.changes > 0 ? `Forgot note #${input.id}.` : `No note #${input.id} to forget.`;
+  }
+  if (input.key) {
+    if (input.confirm !== "yes") {
+      return `Refusing bulk delete by key "${input.key}" without confirm:"yes". Re-call with confirm:"yes" to proceed.`;
+    }
+    const info = db.prepare("DELETE FROM notes WHERE key = ?").run(input.key);
+    return `Forgot ${info.changes} note(s) under key "${input.key}".`;
+  }
+  return 'forget: provide either `id` (single) or `key` + `confirm:"yes"` (bulk).';
+}
+function handlePin(db, input) {
+  const pinned = input.pinned === false ? 0 : 1;
+  const info = db.prepare("UPDATE notes SET pinned = ? WHERE id = ?").run(pinned, input.id);
+  if (info.changes === 0) return `No note #${input.id} to ${pinned ? "pin" : "unpin"}.`;
+  return pinned ? `Pinned note #${input.id}.` : `Unpinned note #${input.id}.`;
+}
+function handleJournal(db, input, currentRepo) {
+  if (!currentRepo) {
+    return "Not in a recognized git repository; no scoped activity.";
+  }
+  const rows = db.prepare(
+    "SELECT e.tool, e.file_path, e.ts FROM edits e JOIN sessions s ON e.session_id = s.id WHERE s.repo = ? ORDER BY e.id DESC LIMIT ?"
+  ).all(currentRepo, input.limit ?? 20);
+  if (rows.length === 0) return `No recorded edits for ${currentRepo} yet.`;
+  const text = rows.map((r) => `${r.ts}  ${r.tool}  ${r.file_path ?? "(no path)"}`).join("\n");
+  return `Recent edits for ${currentRepo}:
+${text}`;
+}
+function fetchTagsFor(db, ids) {
+  const out = /* @__PURE__ */ new Map();
+  if (ids.length === 0) return out;
+  const placeholders = ids.map(() => "?").join(", ");
+  const rows = db.prepare(`SELECT note_id, tag FROM note_tags WHERE note_id IN (${placeholders}) ORDER BY tag ASC`).all(...ids);
+  for (const r of rows) {
+    const arr = out.get(r.note_id) ?? [];
+    arr.push(r.tag);
+    out.set(r.note_id, arr);
+  }
+  return out;
+}
+
 // mcp/server.ts
-var server = new McpServer({ name: "session-journal", version: "0.3.0" });
+var server = new McpServer({ name: "session-journal", version: "0.6.0" });
 var PROJECT_DIR = process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
 var CURRENT_REPO = gitContext(PROJECT_DIR).repo;
+function asText(text) {
+  return { content: [{ type: "text", text }] };
+}
 server.registerTool(
   "store",
   {
     title: "Store a note",
-    description: "Persist a note to cross-session memory. Use for facts, decisions, or context that should survive across Claude Code sessions. Notes are tagged with the current repository so they surface automatically in future sessions on the same repo.",
+    description: "Persist a note to cross-session memory. Use for facts, decisions, or context that should survive across Claude Code sessions. Notes are tagged with the current repository so they surface automatically in future sessions on the same repo. Pass `tags` to make a note discoverable under multiple topics.",
     inputSchema: {
       body: external_exports.string().min(1).describe("The note content to remember."),
-      key: external_exports.string().optional().describe("Optional label to group and look up related notes.")
+      key: external_exports.string().optional().describe("Optional label to group and look up related notes."),
+      tags: external_exports.array(external_exports.string().min(1)).optional().describe("Optional list of topic tags. Lowercased and de-duped on store.")
     }
   },
-  async ({ body, key }) => {
+  async ({ body, key, tags }) => {
     const db = openDb();
     try {
-      db.prepare("INSERT INTO notes (session_id, repo, key, body, ts) VALUES (?, ?, ?, ?, ?)").run(
-        null,
-        CURRENT_REPO,
-        key ?? null,
-        body,
-        now()
-      );
+      return asText(handleStore(db, { body, key, tags }, CURRENT_REPO));
     } finally {
       db.close();
     }
-    const scopeNote = CURRENT_REPO ? ` for ${CURRENT_REPO}` : "";
-    return {
-      content: [{ type: "text", text: `Stored note${key ? ` under key "${key}"` : ""}${scopeNote}.` }]
-    };
   }
 );
 server.registerTool(
   "recall",
   {
     title: "Recall notes",
-    description: "Retrieve previously stored notes from cross-session memory. By default returns notes for the current repository (plus un-scoped notes); pass scope:'all' to search every repo. Filter by key and/or a text query; returns most recent first.",
+    description: "Retrieve previously stored notes from cross-session memory. By default returns notes for the current repository (plus un-scoped notes); pass scope:'all' to search every repo. Filter by key, tags, an FTS5 text query, and/or a date range (since/until ISO timestamps). Returns most recent first.",
     inputSchema: {
       key: external_exports.string().optional().describe("Only return notes stored under this key."),
-      query: external_exports.string().optional().describe("Case-insensitive substring to match in note bodies."),
+      tags: external_exports.array(external_exports.string().min(1)).optional().describe("Match notes carrying any of these tags."),
+      query: external_exports.string().optional().describe("Full-text search over note bodies (FTS5; treated as a phrase)."),
+      since: external_exports.string().optional().describe("Only return notes stored at or after this ISO-8601 timestamp."),
+      until: external_exports.string().optional().describe("Only return notes stored at or before this ISO-8601 timestamp."),
       scope: external_exports.enum(["repo", "all"]).optional().describe("'repo' (default) = current repo + un-scoped notes; 'all' = every repo."),
       limit: external_exports.number().int().positive().max(100).optional().describe("Max notes to return (default 20).")
     }
   },
-  async ({ key, query, scope, limit }) => {
+  async ({ key, tags, query, since, until, scope, limit }) => {
     const db = openDb();
     try {
-      const clauses = [];
-      const params = [];
-      if (scope !== "all" && CURRENT_REPO) {
-        clauses.push("(repo = ? OR repo IS NULL)");
-        params.push(CURRENT_REPO);
-      }
-      if (key) {
-        clauses.push("key = ?");
-        params.push(key);
-      }
-      if (query) {
-        clauses.push("body LIKE ?");
-        params.push(`%${query}%`);
-      }
-      const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
-      const rows = db.prepare(`SELECT id, repo, key, body, ts FROM notes ${where} ORDER BY id DESC LIMIT ?`).all(...params, limit ?? 20);
-      if (rows.length === 0) {
-        return { content: [{ type: "text", text: "No matching notes." }] };
-      }
-      const text = rows.map((r) => `#${r.id} [${r.ts}]${r.key ? ` (${r.key})` : ""}: ${r.body}`).join("\n");
-      return { content: [{ type: "text", text }] };
+      return asText(
+        handleRecall(db, { key, tags, query, since, until, scope, limit }, CURRENT_REPO)
+      );
+    } finally {
+      db.close();
+    }
+  }
+);
+server.registerTool(
+  "forget",
+  {
+    title: "Forget a note",
+    description: 'Delete a stored note. Pass `id` to remove one note. To bulk-delete every note under a given key, pass `key` plus `confirm:"yes"`; without the confirmation the call refuses.',
+    inputSchema: {
+      id: external_exports.number().int().positive().optional().describe("Note id to delete (from a prior `recall`)."),
+      key: external_exports.string().optional().describe("Delete all notes under this key (requires confirm)."),
+      confirm: external_exports.literal("yes").optional().describe("Required when bulk-deleting by key.")
+    }
+  },
+  async ({ id, key, confirm }) => {
+    const db = openDb();
+    try {
+      return asText(handleForget(db, { id, key, confirm }));
+    } finally {
+      db.close();
+    }
+  }
+);
+server.registerTool(
+  "pin",
+  {
+    title: "Pin a note",
+    description: "Mark a note so it is surfaced first on every SessionStart for this repo. Pass `pinned:false` to unpin. Use sparingly \u2014 pinned notes appear above the checkpoint and eat the recall context budget.",
+    inputSchema: {
+      id: external_exports.number().int().positive().describe("Note id to pin or unpin."),
+      pinned: external_exports.boolean().optional().describe("Defaults to true. Set false to unpin.")
+    }
+  },
+  async ({ id, pinned }) => {
+    const db = openDb();
+    try {
+      return asText(handlePin(db, { id, pinned }));
     } finally {
       db.close();
     }
@@ -21311,22 +21479,9 @@ server.registerTool(
     }
   },
   async ({ limit }) => {
-    if (!CURRENT_REPO) {
-      return {
-        content: [{ type: "text", text: "Not in a recognized git repository; no scoped activity." }]
-      };
-    }
     const db = openDb();
     try {
-      const rows = db.prepare(
-        "SELECT e.tool, e.file_path, e.ts FROM edits e JOIN sessions s ON e.session_id = s.id WHERE s.repo = ? ORDER BY e.id DESC LIMIT ?"
-      ).all(CURRENT_REPO, limit ?? 20);
-      if (rows.length === 0) {
-        return { content: [{ type: "text", text: `No recorded edits for ${CURRENT_REPO} yet.` }] };
-      }
-      const text = rows.map((r) => `${r.ts}  ${r.tool}  ${r.file_path ?? "(no path)"}`).join("\n");
-      return { content: [{ type: "text", text: `Recent edits for ${CURRENT_REPO}:
-${text}` }] };
+      return asText(handleJournal(db, { limit }, CURRENT_REPO));
     } finally {
       db.close();
     }

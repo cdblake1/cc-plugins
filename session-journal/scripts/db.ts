@@ -110,6 +110,43 @@ function migrate(db: DatabaseSync): void {
   addColumnIfMissing(db, "sessions", "commit_sha", "TEXT");
   addColumnIfMissing(db, "notes", "repo", "TEXT");
   db.exec("CREATE INDEX IF NOT EXISTS idx_notes_repo ON notes(repo);");
+
+  // v6: pinned flag, tags, and FTS5 over note bodies.
+  addColumnIfMissing(db, "notes", "pinned", "INTEGER NOT NULL DEFAULT 0");
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS note_tags (
+      note_id INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+      tag     TEXT NOT NULL,
+      PRIMARY KEY (note_id, tag)
+    );
+    CREATE INDEX IF NOT EXISTS idx_note_tags_tag ON note_tags(tag);
+
+    CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
+      body, content='notes', content_rowid='id'
+    );
+
+    -- Keep notes_fts in sync with notes.body.
+    CREATE TRIGGER IF NOT EXISTS notes_ai AFTER INSERT ON notes BEGIN
+      INSERT INTO notes_fts(rowid, body) VALUES (new.id, new.body);
+    END;
+    CREATE TRIGGER IF NOT EXISTS notes_ad AFTER DELETE ON notes BEGIN
+      INSERT INTO notes_fts(notes_fts, rowid, body) VALUES('delete', old.id, old.body);
+    END;
+    CREATE TRIGGER IF NOT EXISTS notes_au AFTER UPDATE ON notes BEGIN
+      INSERT INTO notes_fts(notes_fts, rowid, body) VALUES('delete', old.id, old.body);
+      INSERT INTO notes_fts(rowid, body) VALUES (new.id, new.body);
+    END;
+  `);
+
+  // One-time FTS rebuild when crossing into v6. We track this via PRAGMA user_version (a built-in
+  // 32-bit slot SQLite reserves for app schema versions — no extra table needed). Can't gate on
+  // `COUNT(*) FROM notes_fts` because external-content FTS5 always reports the content table's
+  // count regardless of whether the index is populated.
+  const userVersion = (db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version;
+  if (userVersion < 6) {
+    db.exec("INSERT INTO notes_fts(notes_fts) VALUES('rebuild')");
+    db.exec("PRAGMA user_version = 6");
+  }
 }
 
 /** Add a column only if it isn't already present (SQLite has no ADD COLUMN IF NOT EXISTS). */
