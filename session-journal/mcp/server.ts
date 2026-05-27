@@ -1,21 +1,30 @@
-// session-journal MCP server: exposes `store` and `recall` tools over stdio,
-// backed by the same SQLite store the journal hooks write to.
-//
-// Run via: node --experimental-strip-types ${CLAUDE_PLUGIN_ROOT}/mcp/server.ts
-// with NODE_PATH=${CLAUDE_PLUGIN_DATA}/node_modules so the SDK resolves.
+// session-journal MCP server: registration shell. All tool behavior lives in
+// ./handlers.ts so it can be unit-tested directly. This file only knows about
+// schema definitions, the DB lifecycle around each call, and the repo context.
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { openDb, now } from "../scripts/db.ts";
+import { openDb } from "../scripts/db.ts";
 import { gitContext } from "../scripts/gitctx.ts";
+import {
+  handleForget,
+  handleJournal,
+  handlePin,
+  handleRecall,
+  handleStore,
+} from "./handlers.ts";
 
-const server = new McpServer({ name: "session-journal", version: "0.3.0" });
+const server = new McpServer({ name: "session-journal", version: "0.6.0" });
 
 // Repo this server is scoped to, derived from the project dir (exported by Claude Code).
 // Used to tag stored notes and to scope recall by default.
 const PROJECT_DIR = process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
 const CURRENT_REPO = gitContext(PROJECT_DIR).repo;
+
+function asText(text: string) {
+  return { content: [{ type: "text" as const, text }] };
+}
 
 server.registerTool(
   "store",
@@ -24,29 +33,24 @@ server.registerTool(
     description:
       "Persist a note to cross-session memory. Use for facts, decisions, or context " +
       "that should survive across Claude Code sessions. Notes are tagged with the current " +
-      "repository so they surface automatically in future sessions on the same repo.",
+      "repository so they surface automatically in future sessions on the same repo. " +
+      "Pass `tags` to make a note discoverable under multiple topics.",
     inputSchema: {
       body: z.string().min(1).describe("The note content to remember."),
       key: z.string().optional().describe("Optional label to group and look up related notes."),
+      tags: z
+        .array(z.string().min(1))
+        .optional()
+        .describe("Optional list of topic tags. Lowercased and de-duped on store."),
     },
   },
-  async ({ body, key }) => {
+  async ({ body, key, tags }) => {
     const db = openDb();
     try {
-      db.prepare("INSERT INTO notes (session_id, repo, key, body, ts) VALUES (?, ?, ?, ?, ?)").run(
-        null,
-        CURRENT_REPO,
-        key ?? null,
-        body,
-        now(),
-      );
+      return asText(handleStore(db, { body, key, tags }, CURRENT_REPO));
     } finally {
       db.close();
     }
-    const scopeNote = CURRENT_REPO ? ` for ${CURRENT_REPO}` : "";
-    return {
-      content: [{ type: "text", text: `Stored note${key ? ` under key "${key}"` : ""}${scopeNote}.` }],
-    };
   },
 );
 
@@ -57,10 +61,26 @@ server.registerTool(
     description:
       "Retrieve previously stored notes from cross-session memory. By default returns notes " +
       "for the current repository (plus un-scoped notes); pass scope:'all' to search every repo. " +
-      "Filter by key and/or a text query; returns most recent first.",
+      "Filter by key, tags, an FTS5 text query, and/or a date range (since/until ISO timestamps). " +
+      "Returns most recent first.",
     inputSchema: {
       key: z.string().optional().describe("Only return notes stored under this key."),
-      query: z.string().optional().describe("Case-insensitive substring to match in note bodies."),
+      tags: z
+        .array(z.string().min(1))
+        .optional()
+        .describe("Match notes carrying any of these tags."),
+      query: z
+        .string()
+        .optional()
+        .describe("Full-text search over note bodies (FTS5; treated as a phrase)."),
+      since: z
+        .string()
+        .optional()
+        .describe("Only return notes stored at or after this ISO-8601 timestamp."),
+      until: z
+        .string()
+        .optional()
+        .describe("Only return notes stored at or before this ISO-8601 timestamp."),
       scope: z
         .enum(["repo", "all"])
         .optional()
@@ -74,42 +94,69 @@ server.registerTool(
         .describe("Max notes to return (default 20)."),
     },
   },
-  async ({ key, query, scope, limit }) => {
+  async ({ key, tags, query, since, until, scope, limit }) => {
     const db = openDb();
     try {
-      const clauses: string[] = [];
-      const params: (string | number)[] = [];
-      // Repo scoping (default). Skipped when scope='all' or when we can't tell the repo.
-      if (scope !== "all" && CURRENT_REPO) {
-        clauses.push("(repo = ? OR repo IS NULL)");
-        params.push(CURRENT_REPO);
-      }
-      if (key) {
-        clauses.push("key = ?");
-        params.push(key);
-      }
-      if (query) {
-        clauses.push("body LIKE ?");
-        params.push(`%${query}%`);
-      }
-      const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
-      const rows = db
-        .prepare(`SELECT id, repo, key, body, ts FROM notes ${where} ORDER BY id DESC LIMIT ?`)
-        .all(...params, limit ?? 20) as Array<{
-        id: number;
-        repo: string | null;
-        key: string | null;
-        body: string;
-        ts: string;
-      }>;
+      return asText(
+        handleRecall(db, { key, tags, query, since, until, scope, limit }, CURRENT_REPO),
+      );
+    } finally {
+      db.close();
+    }
+  },
+);
 
-      if (rows.length === 0) {
-        return { content: [{ type: "text", text: "No matching notes." }] };
-      }
-      const text = rows
-        .map((r) => `#${r.id} [${r.ts}]${r.key ? ` (${r.key})` : ""}: ${r.body}`)
-        .join("\n");
-      return { content: [{ type: "text", text }] };
+server.registerTool(
+  "forget",
+  {
+    title: "Forget a note",
+    description:
+      "Delete a stored note. Pass `id` to remove one note. To bulk-delete every note under " +
+      "a given key, pass `key` plus `confirm:\"yes\"`; without the confirmation the call refuses.",
+    inputSchema: {
+      id: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe("Note id to delete (from a prior `recall`)."),
+      key: z.string().optional().describe("Delete all notes under this key (requires confirm)."),
+      confirm: z
+        .literal("yes")
+        .optional()
+        .describe("Required when bulk-deleting by key."),
+    },
+  },
+  async ({ id, key, confirm }) => {
+    const db = openDb();
+    try {
+      return asText(handleForget(db, { id, key, confirm }));
+    } finally {
+      db.close();
+    }
+  },
+);
+
+server.registerTool(
+  "pin",
+  {
+    title: "Pin a note",
+    description:
+      "Mark a note so it is surfaced first on every SessionStart for this repo. Pass " +
+      "`pinned:false` to unpin. Use sparingly — pinned notes appear above the checkpoint " +
+      "and eat the recall context budget.",
+    inputSchema: {
+      id: z.number().int().positive().describe("Note id to pin or unpin."),
+      pinned: z
+        .boolean()
+        .optional()
+        .describe("Defaults to true. Set false to unpin."),
+    },
+  },
+  async ({ id, pinned }) => {
+    const db = openDb();
+    try {
+      return asText(handlePin(db, { id, pinned }));
     } finally {
       db.close();
     }
@@ -134,28 +181,9 @@ server.registerTool(
     },
   },
   async ({ limit }) => {
-    if (!CURRENT_REPO) {
-      return {
-        content: [{ type: "text", text: "Not in a recognized git repository; no scoped activity." }],
-      };
-    }
     const db = openDb();
     try {
-      const rows = db
-        .prepare(
-          "SELECT e.tool, e.file_path, e.ts FROM edits e JOIN sessions s ON e.session_id = s.id " +
-            "WHERE s.repo = ? ORDER BY e.id DESC LIMIT ?",
-        )
-        .all(CURRENT_REPO, limit ?? 20) as Array<{
-        tool: string;
-        file_path: string | null;
-        ts: string;
-      }>;
-      if (rows.length === 0) {
-        return { content: [{ type: "text", text: `No recorded edits for ${CURRENT_REPO} yet.` }] };
-      }
-      const text = rows.map((r) => `${r.ts}  ${r.tool}  ${r.file_path ?? "(no path)"}`).join("\n");
-      return { content: [{ type: "text", text: `Recent edits for ${CURRENT_REPO}:\n${text}` }] };
+      return asText(handleJournal(db, { limit }, CURRENT_REPO));
     } finally {
       db.close();
     }
