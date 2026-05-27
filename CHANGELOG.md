@@ -2,6 +2,39 @@
 
 All notable changes to the **session-journal** plugin. Dates are UTC.
 
+## [0.6.0] — 2026-05-26
+### Added
+- **`forget` MCP tool.** Delete a stored note by `id`; bulk-delete by `key` requires
+  `confirm:"yes"` to avoid accidents.
+- **`pin` MCP tool.** Toggle a per-note pinned flag. Pinned notes lead every SessionStart
+  inject (above the checkpoint), then the handoff, then earlier notes. Use sparingly — pinned
+  notes eat the recall context budget.
+- **Tags on notes.** `store` accepts an optional `tags` array (lowercased + deduped); `recall`
+  filters by `tags` and renders them inline. Additive `note_tags` table with `ON DELETE CASCADE`.
+- **Smarter `recall`.** Full-text search over note bodies via FTS5 (`query:` is a phrase MATCH),
+  plus `since` / `until` ISO date-range filters.
+
+### Changed
+- **Quieter SessionStart inject.** The "earlier notes" block now excludes `session-rollup`
+  notes — they're deterministic activity dumps that crowded out hand-written context once a
+  few sessions accumulated. The freshest rollup still surfaces via the handoff fallback when
+  no `/checkpoint` exists.
+- **Bounded rollup growth.** `SessionEnd` now prunes older `session-rollup` notes per repo,
+  keeping the most recent 5 (pinned rollups always preserved). Raw activity remains searchable
+  via the `edits` table; the `journal` MCP tool is unaffected. New `pruneOldRollups` helper +
+  tests.
+
+### Schema
+- `notes.pinned` column (added via `addColumnIfMissing`).
+- `note_tags(note_id, tag)` table + `idx_note_tags_tag` index.
+- `notes_fts` external-content FTS5 virtual table + insert/update/delete sync triggers,
+  with a one-time backfill gated on `PRAGMA user_version < 6`.
+
+### Refactor
+- MCP tool bodies extracted to `mcp/handlers.ts` (pure-ish, take a `DatabaseSync`). Mirrors the
+  `guardrail-policy.ts` / `rollup.ts` pattern; enables direct unit testing without spawning the
+  bundle.
+
 ## [0.5.1] — 2026-05-24
 ### Fixed
 - **Handoff now leads with your `/checkpoint`, not the auto rollup.** The `SessionStart` handoff

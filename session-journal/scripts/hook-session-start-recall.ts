@@ -5,7 +5,9 @@
 // Block order (most-important first, within MAX_OUTPUT budget):
 //   1. pinned notes (always-surface project facts)
 //   2. handoff: most recent /checkpoint, falling back to the auto session-rollup
-//   3. recent earlier notes (excluding pinned + handoff ids already shown)
+//   3. recent earlier notes (excluding pinned + handoff ids already shown, and excluding
+//      session-rollup notes — those are deterministic activity dumps that crowd out hand-written
+//      notes; the freshest rollup still surfaces via the handoff fallback when no checkpoint exists)
 
 import { openDb } from "./db.ts";
 import { readHookInput } from "./hooklib.ts";
@@ -60,9 +62,13 @@ try {
       .get(...scopeParams, ...pinnedIds, ...HANDOFF_KEYS) as NoteRow | undefined;
 
     const exclHandoffSql = handoff ? " AND id <> ?" : "";
+    // `key IS NULL` matches notes with no key; `key <> 'session-rollup'` matches everything else
+    // (rollups specifically excluded). NULL-safe — bare `key <> 'session-rollup'` would drop keyless
+    // notes too because comparisons with NULL yield NULL/false in SQL.
+    const exclRollupSql = " AND (key IS NULL OR key <> 'session-rollup')";
     recent = db
       .prepare(
-        `SELECT id, key, body FROM notes WHERE ${scopeSql}${exclPinnedSql}${exclHandoffSql} ORDER BY id DESC LIMIT ?`,
+        `SELECT id, key, body FROM notes WHERE ${scopeSql}${exclPinnedSql}${exclHandoffSql}${exclRollupSql} ORDER BY id DESC LIMIT ?`,
       )
       .all(...scopeParams, ...pinnedIds, ...(handoff ? [handoff.id] : []), MAX_NOTES) as NoteRow[];
   } finally {

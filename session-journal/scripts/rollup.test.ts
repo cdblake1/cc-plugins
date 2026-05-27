@@ -1,5 +1,18 @@
-// Unit tests for the pure rollup formatting (v5 auto-capture). Run via `npm test`.
-import { formatDuration, baseName, formatRollup, liveEdits, type EditRow } from "./rollup.ts";
+// Unit tests for rollup helpers (v5 auto-capture pure formatters + v0.6.0 retention).
+// Run via `npm test`.
+import { mkdtempSync, rmSync, existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { openDb } from "./db.ts";
+import {
+  formatDuration,
+  baseName,
+  formatRollup,
+  liveEdits,
+  pruneOldRollups,
+  ROLLUP_RETENTION,
+  type EditRow,
+} from "./rollup.ts";
 
 let failed = 0;
 function eq(name: string, got: string | null, want: string | null): void {
@@ -86,6 +99,112 @@ eq(
   ),
   "Auto session rollup — 1 edit across 1 file: a.ts.",
 );
+
+// --- pruneOldRollups (DB-touching, tmp SQLite — like mcp/handlers.test.ts).
+const root = mkdtempSync(join(tmpdir(), "session-journal-rollup-test-"));
+try {
+  const db = openDb(join(root, "state.db"));
+  try {
+    const REPO_A = "owner/a";
+    const REPO_B = "owner/b";
+    const insertNote = (repo: string | null, key: string | null, body: string, ts: string): number => {
+      const info = db
+        .prepare("INSERT INTO notes (session_id, repo, key, body, ts) VALUES (?, ?, ?, ?, ?)")
+        .run(null, repo, key, body, ts);
+      return Number(info.lastInsertRowid);
+    };
+    const setPin = (id: number, pinned: 0 | 1): void => {
+      db.prepare("UPDATE notes SET pinned = ? WHERE id = ?").run(pinned, id);
+    };
+    const rollupIdsFor = (repo: string | null): number[] => {
+      const sql =
+        repo === null
+          ? "SELECT id FROM notes WHERE key = 'session-rollup' AND repo IS NULL ORDER BY id ASC"
+          : "SELECT id FROM notes WHERE key = 'session-rollup' AND repo = ? ORDER BY id ASC";
+      const rows = (repo === null ? db.prepare(sql).all() : db.prepare(sql).all(repo)) as Array<{
+        id: number;
+      }>;
+      return rows.map((r) => r.id);
+    };
+
+    // 7 rollups in REPO_A (ts only ordered for realism; pruning uses id desc).
+    const aIds = [
+      insertNote(REPO_A, "session-rollup", "a-1", "2026-05-26T00:00:01.000Z"),
+      insertNote(REPO_A, "session-rollup", "a-2", "2026-05-26T00:00:02.000Z"),
+      insertNote(REPO_A, "session-rollup", "a-3", "2026-05-26T00:00:03.000Z"),
+      insertNote(REPO_A, "session-rollup", "a-4", "2026-05-26T00:00:04.000Z"),
+      insertNote(REPO_A, "session-rollup", "a-5", "2026-05-26T00:00:05.000Z"),
+      insertNote(REPO_A, "session-rollup", "a-6", "2026-05-26T00:00:06.000Z"),
+      insertNote(REPO_A, "session-rollup", "a-7", "2026-05-26T00:00:07.000Z"),
+    ];
+    // 2 rollups in REPO_B (other repo — must be untouched by pruning REPO_A).
+    const bIds = [
+      insertNote(REPO_B, "session-rollup", "b-1", "2026-05-26T00:01:01.000Z"),
+      insertNote(REPO_B, "session-rollup", "b-2", "2026-05-26T00:01:02.000Z"),
+    ];
+    // Non-rollup notes in REPO_A — must be untouched.
+    const nonRollupId = insertNote(REPO_A, "checkpoint", "a checkpoint", "2026-05-26T00:00:08.000Z");
+    const keylessId = insertNote(REPO_A, null, "a keyless note", "2026-05-26T00:00:09.000Z");
+
+    // Default retention keeps 5: drops the 2 oldest (a-1, a-2).
+    const deletedA = pruneOldRollups(db, REPO_A);
+    eq("prune deletes count", String(deletedA), "2");
+    eq("prune default retention constant", String(ROLLUP_RETENTION), "5");
+
+    const afterA = rollupIdsFor(REPO_A);
+    eq("prune keeps last 5 by id", afterA.join(","), aIds.slice(2).join(","));
+
+    // REPO_B untouched.
+    eq("prune does not cross repos", rollupIdsFor(REPO_B).join(","), bIds.join(","));
+
+    // Non-rollup notes in REPO_A untouched.
+    const checkpointStill = (
+      db.prepare("SELECT id FROM notes WHERE id = ?").get(nonRollupId) as { id: number } | undefined
+    )?.id;
+    eq("prune leaves checkpoint", String(checkpointStill), String(nonRollupId));
+    const keylessStill = (
+      db.prepare("SELECT id FROM notes WHERE id = ?").get(keylessId) as { id: number } | undefined
+    )?.id;
+    eq("prune leaves keyless note", String(keylessStill), String(keylessId));
+
+    // Pinned rollups are preserved even when older than the retention window.
+    const pinned = insertNote(REPO_A, "session-rollup", "a-pinned-old", "2025-01-01T00:00:00.000Z");
+    setPin(pinned, 1);
+    // Now there are 5 unpinned + 1 pinned = 6 rollups. keep=2 should drop 3 unpinned, leave pinned.
+    const deletedA2 = pruneOldRollups(db, REPO_A, 2);
+    eq("prune ignores pinned when counting kept", String(deletedA2), "3");
+    const pinnedStill = (
+      db.prepare("SELECT id FROM notes WHERE id = ?").get(pinned) as { id: number } | undefined
+    )?.id;
+    eq("prune preserves pinned rollup", String(pinnedStill), String(pinned));
+
+    // No-repo (null) scope: pruning a null-repo session must not touch named-repo rollups.
+    const nullIds = [
+      insertNote(null, "session-rollup", "n-1", "2026-05-27T00:00:01.000Z"),
+      insertNote(null, "session-rollup", "n-2", "2026-05-27T00:00:02.000Z"),
+      insertNote(null, "session-rollup", "n-3", "2026-05-27T00:00:03.000Z"),
+    ];
+    const deletedNull = pruneOldRollups(db, null, 1);
+    eq("prune null-scope deletes count", String(deletedNull), "2");
+    const remainingNull = rollupIdsFor(null);
+    eq("prune null-scope keeps newest", remainingNull.join(","), String(nullIds[2]));
+    // REPO_B still untouched after null-scope prune.
+    eq("prune null-scope does not touch repo B", rollupIdsFor(REPO_B).join(","), bIds.join(","));
+
+    // keep=0 removes all unpinned for the scope.
+    const deletedZero = pruneOldRollups(db, REPO_B, 0);
+    eq("prune keep=0 deletes all unpinned", String(deletedZero), "2");
+    eq("prune keep=0 leaves nothing unpinned", rollupIdsFor(REPO_B).join(","), "");
+
+    // Negative keep is a no-op (defensive).
+    const deletedNeg = pruneOldRollups(db, REPO_A, -1);
+    eq("prune negative keep is no-op", String(deletedNeg), "0");
+  } finally {
+    db.close();
+  }
+} finally {
+  if (existsSync(root)) rmSync(root, { recursive: true, force: true });
+}
 
 if (failed > 0) {
   console.error(`\nrollup: ${failed} assertion(s) FAILED`);

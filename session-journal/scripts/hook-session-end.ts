@@ -7,7 +7,13 @@
 import { existsSync } from "node:fs";
 import { openDb, now } from "./db.ts";
 import { readHookInput } from "./hooklib.ts";
-import { formatRollup, liveEdits, type EditRow, type SessionRow } from "./rollup.ts";
+import {
+  formatRollup,
+  liveEdits,
+  pruneOldRollups,
+  type EditRow,
+  type SessionRow,
+} from "./rollup.ts";
 
 try {
   const input = await readHookInput<{ session_id?: string }>();
@@ -35,6 +41,10 @@ try {
             db.prepare(
               "INSERT INTO notes (session_id, repo, key, body, ts) VALUES (?, ?, ?, ?, ?)",
             ).run(id, session.repo, "session-rollup", body, endedAt);
+            // Cap rollup growth: keep only the most recent N per repo (pinned ones preserved).
+            // The freshest rollup still serves as a handoff fallback when no /checkpoint exists,
+            // and raw activity stays searchable via the `edits` table.
+            pruneOldRollups(db, session.repo);
           }
         }
       }
