@@ -1,4 +1,4 @@
-# PLAN — cc-plugins / session-journal
+# PLAN — cc-plugins / local-cc-plugin
 
 Roadmap as a checklist. See `CHANGELOG.md` for shipped history and `CLAUDE.md` for the build spec.
 

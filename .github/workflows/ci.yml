@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: session-journal
+        working-directory: local-cc-plugin
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -38,4 +38,4 @@ jobs:
       - name: Install Claude Code CLI
         run: npm install -g @anthropic-ai/claude-code
       - name: Validate plugin manifest
-        run: claude plugin validate ./session-journal --strict
+        run: claude plugin validate ./local-cc-plugin --strict

@@ -1,6 +1,19 @@
 # Changelog
 
-All notable changes to the **session-journal** plugin. Dates are UTC.
+All notable changes to the **local-cc-plugin** plugin (formerly named `session-journal`; that
+name now refers to the MCP server inside it). Dates are UTC.
+
+## [Unreleased]
+### Changed
+- **Renamed the plugin `session-journal` → `local-cc-plugin`** (umbrella name; placeholder). The
+  MCP server keeps the name `session-journal`, so all `mcp__session-journal__*` tool ids and the
+  bundle are unchanged. Plugin dir, manifest, marketplace entry, CI paths, and docs updated.
+  Note: the plugin's `${CLAUDE_PLUGIN_DATA}` id changes with the name, so existing local state is
+  migrated by copying the old data dir to the new id.
+### Added
+- **`/init` slash command** — interactively set Claude Code's view verbosity (`viewMode`,
+  `outputStyle`) in your user `settings.json`. Non-destructive and idempotent; backed by
+  `scripts/apply-view-prefs.ts` (uses only `node:fs`/`os`/`path`, not part of the MCP bundle).
 
 ## [0.7.0] — 2026-05-30
 ### Added

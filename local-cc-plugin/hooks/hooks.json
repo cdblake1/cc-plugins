@@ -51,6 +51,17 @@
         ]
       }
     ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node --experimental-strip-types --no-warnings \"${CLAUDE_PLUGIN_ROOT}/scripts/hook-precompact.ts\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [

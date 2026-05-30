@@ -6,21 +6,22 @@ A [Claude Code](https://claude.com/claude-code) plugin marketplace.
 
 | Plugin | What it does |
 | :----- | :----------- |
-| [`session-journal`](./session-journal) | Session journal, cross-session memory (`store`/`recall`), Bash guardrails, and opt-in dev-hygiene gating. |
+| [`local-cc-plugin`](./local-cc-plugin) | Umbrella plugin: the `session-journal` MCP server (cross-session memory), journaling + Bash guardrail hooks, opt-in dev-hygiene gating, and a `/init` view-setup command. |
 
 ## Install
 
 ```text
 /plugin marketplace add cdblake1/cc-plugins
-/plugin install session-journal@cc-plugins
+/plugin install local-cc-plugin@cc-plugins
 ```
 
 ---
 
-## session-journal
+## local-cc-plugin
 
-Four capabilities, one small SQLite store (at `${CLAUDE_PLUGIN_DATA}/state.db`, which
-survives plugin updates and reinstalls):
+An umbrella plugin. Its core is the **`session-journal`** capability set — four pieces over one
+small SQLite store (at `${CLAUDE_PLUGIN_DATA}/state.db`, which survives plugin updates and
+reinstalls) — plus a `/init` setup command (see below):
 
 > **Note — state is per install identity.** `${CLAUDE_PLUGIN_DATA}` resolves to
 > `~/.claude/plugins/data/{plugin-name}-{marketplace-name}/`, so the store is keyed by *how the
@@ -56,9 +57,12 @@ survives plugin updates and reinstalls):
 - Slash command **`/checkpoint`** — summarize the current session and save it as a handoff for next time.
 - Slash command **`/hygiene`** — run your configured dev-hygiene checks on demand.
 - Slash command **`/clarify-intent [what you want to build]`** — stakeholder-style requirement gathering (multiple-choice + open-ended) that ends with a verified readiness verdict.
+- Slash command **`/init`** — interactively set Claude Code's view verbosity (`viewMode` focus/default/verbose, `outputStyle`) in your user `settings.json`. Non-destructive (preserves your other settings) and idempotent.
+- Slash command **`/research [question]`** — cost-aware research: auto-picks a tier (light/medium/heavy) and route (web/codebase), confirms cost before spending, then runs and saves the report.
 - Subagent **`journal-keeper`** — remembers and recalls cross-session context.
 - Subagent **`requirements-verifier`** — judges whether gathered requirements are complete enough to build.
 - Skill **`clarify-intent`** — the requirement-gathering methodology behind `/clarify-intent`; auto-triggers when scoping work before building.
+- Skill **`research`** — the cost-aware research methodology behind `/research` (tier/route selection, cost confirmation, source isolation).
 - MCP server **`session-journal`** — `store` / `recall` (repo-scoped) + `journal` (recent edits).
 
 ### Configuration (dev-hygiene gating)
@@ -89,12 +93,12 @@ One more option, unrelated to gating:
 ### Building (contributors)
 
 The MCP server ships as a committed, self-contained bundle
-(`session-journal/mcp/server.bundle.mjs`) so it runs with **zero runtime dependencies** —
+(`local-cc-plugin/mcp/server.bundle.mjs`) so it runs with **zero runtime dependencies** —
 no `npm install` on the user's machine. Rebuild it after editing `mcp/server.ts`,
 `scripts/db.ts`, or bumping a dev dependency:
 
 ```bash
-cd session-journal
+cd local-cc-plugin
 npm install      # behind a TLS-intercepting proxy: NODE_OPTIONS=--use-system-ca npm install
 npm run build    # regenerates mcp/server.bundle.mjs via esbuild
 npm test         # guardrail + check-runner unit tests
