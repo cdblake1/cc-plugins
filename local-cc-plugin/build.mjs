@@ -15,7 +15,7 @@ await build({
   entryPoints: [resolve(root, "mcp/server.ts")],
   // Pin the base dir so the module-path comments esbuild embeds are relative to the
   // plugin dir regardless of the invocation cwd — keeps the bundle byte-identical
-  // whether built locally (from repo root) or in CI (from session-journal/).
+  // whether built locally (from repo root) or in CI (from local-cc-plugin/).
   absWorkingDir: root,
   bundle: true,
   platform: "node",

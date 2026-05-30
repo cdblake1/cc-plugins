@@ -1,5 +1,33 @@
 # CLAUDE.md — Claude Code Plugin Build
 
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Commands (run from `local-cc-plugin/`)
+Requires **Node >= 22.6.0** (built-in `node:sqlite` + `--experimental-strip-types`).
+- **All tests:** `npm test` (runs the `*.test.ts` files via `node --experimental-strip-types`).
+- **One test file:** `node --experimental-strip-types --no-warnings scripts/guardrail.test.ts` (swap the path; e.g. `mcp/handlers.test.ts`).
+- **Build the MCP bundle:** `npm run build` (esbuild → `mcp/server.bundle.mjs`).
+- **Install build deps** (behind a TLS-intercepting proxy): `NODE_OPTIONS=--use-system-ca npm install`.
+- **Validate the plugin** (from repo root): `claude plugin validate ./local-cc-plugin --strict`.
+
+**Critical rebuild rule:** `mcp/server.bundle.mjs` is committed and inlines `mcp/server.ts`,
+`mcp/handlers.ts`, `scripts/db.ts`, and `scripts/gitctx.ts`. After editing any of those, run
+`npm run build` and commit the regenerated bundle — CI fails if it drifts (`git diff --exit-code mcp/server.bundle.mjs`).
+
+## Architecture (where things live)
+The repo root holds only marketplace + docs; the entire plugin is in **`local-cc-plugin/`**
+(the plugin was renamed from `session-journal`; that name now denotes the MCP server inside it).
+Two runtimes share **one SQLite store** at `${CLAUDE_PLUGIN_DATA}/state.db`:
+- **Hook scripts** (`scripts/*.ts`, wired in `hooks/hooks.json`) run via `node --experimental-strip-types`
+  with **zero `node_modules`** — they use built-in `node:sqlite`. Cover SessionStart (journal + auto-recall),
+  PreToolUse/Bash (guardrail), PostToolUse (edit logging), SessionEnd, PreCompact, Stop (hygiene gate).
+- **MCP server** (`mcp/server.ts` → bundled `server.bundle.mjs`, launched by `.mcp.json`) exposes the
+  `store` / `recall` / `forget` / `pin` / `journal` tools. Registration shell only — behavior is in `handlers.ts`.
+- **`scripts/db.ts`** is the shared schema + migration layer imported by both runtimes (hence the rebuild rule).
+- **Pure logic is extracted for unit testing**, each with a sibling `.test.ts`: `guardrail-policy.ts`,
+  `gitctx.ts` (repo scoping), `rollup.ts`, `checks.ts`, `mcp/handlers.ts`. Keep new logic in this pure-function
+  shape rather than inline in hooks/server so it stays testable without spawning the bundle.
+
 ## What we're building
 A single Claude Code **plugin bundle** containing all four primitives: slash command(s),
 a subagent, hooks, and an MCP server. Distributed local-first, shareable later via marketplace.
@@ -87,6 +115,23 @@ Deliberate, validated deviations from the locked stack:
   READY/NOT-READY + coverage checklist + blocking gaps. Skill loops on gaps, capped at 2 rounds.
 - **Persist:** final doc saved via `mcp__session-journal__store` (`key: requirements`). Isolated in a
   marked PERSIST BLOCK in the skill so it can be repointed at a dedicated store later.
+
+## v6 implementation notes (umbrella rename + `/init` view setup — shipped)
+- **Plugin renamed `session-journal` → `local-cc-plugin`** (umbrella name; placeholder). The
+  rename is cheap because **the MCP server keeps the name `session-journal`** (the server key in
+  `.mcp.json`): every `mcp__session-journal__*` tool id is unchanged and the bundle is byte-identical,
+  so **no rebuild**. Changed: dir (`git mv`), `plugin.json`/`package.json`/`package-lock.json` names,
+  `marketplace.json` entry + `source`, CI `working-directory` + `validate` path, and dir/path mentions
+  in docs. *Kept* `session-journal`: server registration, tool ids, hook log prefixes, user-facing
+  "session-journal memory" handoff text, test temp-dir names.
+- **State-dir migration:** `${CLAUDE_PLUGIN_DATA}` = `~/.claude/plugins/data/{plugin-name}-{marketplace-name}/`,
+  so renaming the plugin orphans the old store. Migrated by `cp -R` of the old data dir
+  (`session-journal-cc-plugins`) to the new id (`local-cc-plugin-cc-plugins`) once.
+- **`/init` command:** interactive (`AskUserQuestion`) setup that writes `viewMode` + `outputStyle`
+  into the user's `settings.json`. Plugins **cannot** natively inject harness settings, so this is a
+  user-run command, backed by `scripts/apply-view-prefs.ts` (pure `applyPrefs` + a thin CLI; uses only
+  `node:fs`/`os`/`path`, **not** in the MCP bundle). Non-destructive (preserves existing keys),
+  idempotent, bails on malformed settings JSON.
 
 ## Verified mechanics (confirmed against code.claude.com/docs/en/plugins-reference — trust these)
 - **Layout:** ONLY `plugin.json` goes in `.claude-plugin/`. Every component dir (`commands/`,

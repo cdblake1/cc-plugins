@@ -1,9 +1,9 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
-  "name": "session-journal",
-  "displayName": "Session Journal",
+  "name": "local-cc-plugin",
+  "displayName": "Local CC Plugin",
   "version": "0.8.0",
-  "description": "Session journal, cross-session memory (store/recall), Bash guardrails, and compaction-safe context handoffs for Claude Code.",
+  "description": "Umbrella plugin for Claude Code: the session-journal MCP server (cross-session memory), journaling + Bash guardrail hooks, compaction-safe handoffs, and view-setup commands.",
   "author": {
     "name": "Caleb Blake"
   },
@@ -29,6 +29,16 @@
       "type": "string",
       "title": "Auto session rollup",
       "description": "Set to 'off' to disable the automatic end-of-session rollup note (files touched + edit count) written to memory. Enabled by default; a rollup is written only when the session made edits."
+    },
+    "context_budget_warn_pct": {
+      "type": "string",
+      "title": "Context budget warning %",
+      "description": "Optional. Set to a percent (e.g. '75') to get a one-line context-usage nudge at the start of each turn once the context window is at least that full, prompting a /checkpoint + /compact. Leave empty to disable (default)."
+    },
+    "context_window_tokens": {
+      "type": "string",
+      "title": "Context window size (tokens)",
+      "description": "Optional. Token size of your model's context window, used as the denominator for the budget percent. Defaults to 200000. Set higher for larger-context models."
     }
   }
 }

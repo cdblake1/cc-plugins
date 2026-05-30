@@ -6,9 +6,9 @@
   "description": "A Claude Code plugin marketplace.",
   "plugins": [
     {
-      "name": "session-journal",
-      "source": "./session-journal",
-      "description": "Session journal, cross-session memory (store/recall), and Bash guardrails for Claude Code."
+      "name": "local-cc-plugin",
+      "source": "./local-cc-plugin",
+      "description": "Umbrella plugin: session-journal MCP server (cross-session memory), journaling + Bash guardrail hooks, and setup commands."
     }
   ]
 }
