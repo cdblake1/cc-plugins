@@ -55,7 +55,10 @@ survives plugin updates and reinstalls):
 - Slash command **`/journal [note or query]`** — store a note and/or recall recent ones.
 - Slash command **`/checkpoint`** — summarize the current session and save it as a handoff for next time.
 - Slash command **`/hygiene`** — run your configured dev-hygiene checks on demand.
+- Slash command **`/clarify-intent [what you want to build]`** — stakeholder-style requirement gathering (multiple-choice + open-ended) that ends with a verified readiness verdict.
 - Subagent **`journal-keeper`** — remembers and recalls cross-session context.
+- Subagent **`requirements-verifier`** — judges whether gathered requirements are complete enough to build.
+- Skill **`clarify-intent`** — the requirement-gathering methodology behind `/clarify-intent`; auto-triggers when scoping work before building.
 - MCP server **`session-journal`** — `store` / `recall` (repo-scoped) + `journal` (recent edits).
 
 ### Configuration (dev-hygiene gating)

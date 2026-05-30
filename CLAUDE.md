@@ -76,6 +76,18 @@ Deliberate, validated deviations from the locked stack:
   (strict `s.repo = current` — no cross-repo leakage of file paths). Bundle rebuild.
 - Still deferred: guardrail "writes outside the project dir" (too false-positive-prone for static parsing).
 
+## v5 implementation notes (clarify-intent requirement gathering — shipped)
+- **Plugin's first `skill`:** `skills/clarify-intent/SKILL.md` holds the methodology; `skills/` is a
+  plugin-root component dir, auto-discovered (no `plugin.json` change, no bundle rebuild — markdown only).
+- **Stakeholder-interview flow:** `/clarify-intent` (thin entry) runs the skill, which asks a mix of
+  multiple-choice (`AskUserQuestion`) and open-ended questions across six requirement dimensions,
+  composes a doc, then calls the `requirements-verifier` subagent.
+- **Fast verify:** `requirements-verifier` runs on `model: haiku`, **no tools**, single pass — the doc
+  is passed **inline** in the invocation prompt (no `recall` round-trip). Fixed 6-dim rubric →
+  READY/NOT-READY + coverage checklist + blocking gaps. Skill loops on gaps, capped at 2 rounds.
+- **Persist:** final doc saved via `mcp__session-journal__store` (`key: requirements`). Isolated in a
+  marked PERSIST BLOCK in the skill so it can be repointed at a dedicated store later.
+
 ## Verified mechanics (confirmed against code.claude.com/docs/en/plugins-reference — trust these)
 - **Layout:** ONLY `plugin.json` goes in `.claude-plugin/`. Every component dir (`commands/`,
   `agents/`, `hooks/`, `skills/`, `.mcp.json`) lives at the **plugin root**.
