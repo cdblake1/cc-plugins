@@ -2,13 +2,13 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "session-journal",
   "displayName": "Session Journal",
-  "version": "0.7.0",
-  "description": "Session journal, cross-session memory (store/recall), and Bash guardrails for Claude Code.",
+  "version": "0.8.0",
+  "description": "Session journal, cross-session memory (store/recall), Bash guardrails, and compaction-safe context handoffs for Claude Code.",
   "author": {
     "name": "Caleb Blake"
   },
   "license": "MIT",
-  "keywords": ["journal", "memory", "guardrails", "sqlite", "mcp"],
+  "keywords": ["journal", "memory", "guardrails", "context", "sqlite", "mcp"],
   "userConfig": {
     "format_command": {
       "type": "string",

@@ -8,9 +8,13 @@ import {
   formatDuration,
   baseName,
   formatRollup,
+  formatCompactHandoff,
   liveEdits,
   pruneOldRollups,
+  pruneOldNotesByKey,
   ROLLUP_RETENTION,
+  COMPACT_HANDOFF_KEY,
+  COMPACT_HANDOFF_RETENTION,
   type EditRow,
 } from "./rollup.ts";
 
@@ -75,6 +79,37 @@ eq(
   "rollup-null-paths",
   formatRollup({ started_at: null, ended_at: null, branch: null, commit_sha: null }, [edit(null), edit(null)]),
   "Auto session rollup — 2 edits across 0 files.",
+);
+
+// formatCompactHandoff — prefixes the rollup body with a compaction marker (+ trigger).
+eq("compact-null-body", formatCompactHandoff(null, "auto"), null);
+eq("compact-empty-body", formatCompactHandoff("", "auto"), null);
+eq(
+  "compact-auto",
+  formatCompactHandoff("Auto session rollup — 1 edit across 1 file: q.ts.", "auto"),
+  "Context compacted (auto). Auto session rollup — 1 edit across 1 file: q.ts.",
+);
+eq(
+  "compact-manual",
+  formatCompactHandoff("Auto session rollup — 2 edits across 1 file: a.ts.", "manual"),
+  "Context compacted (manual). Auto session rollup — 2 edits across 1 file: a.ts.",
+);
+// Unknown / missing trigger → no parenthetical, still a valid handoff.
+eq(
+  "compact-unknown-trigger",
+  formatCompactHandoff("Auto session rollup — 1 edit across 1 file: q.ts.", "weird"),
+  "Context compacted. Auto session rollup — 1 edit across 1 file: q.ts.",
+);
+eq(
+  "compact-null-trigger",
+  formatCompactHandoff("Auto session rollup — 1 edit across 1 file: q.ts.", null),
+  "Context compacted. Auto session rollup — 1 edit across 1 file: q.ts.",
+);
+// Integration: formatRollup → formatCompactHandoff produces the stored body shape.
+eq(
+  "compact-from-rollup",
+  formatCompactHandoff(formatRollup(sess, [edit("/x/a.ts"), edit("/x/b.ts")]), "auto"),
+  "Context compacted (auto). Auto session rollup (branch main, @abc1234, ~25m) — 2 edits across 2 files: a.ts, b.ts.",
 );
 
 // liveEdits — drop edits whose file no longer exists; keep extant files and null paths.
@@ -199,6 +234,49 @@ try {
     // Negative keep is a no-op (defensive).
     const deletedNeg = pruneOldRollups(db, REPO_A, -1);
     eq("prune negative keep is no-op", String(deletedNeg), "0");
+
+    // --- pruneOldNotesByKey with the v7 compact-handoff key (key-scoped, repo-scoped).
+    eq("compact retention constant", String(COMPACT_HANDOFF_RETENTION), "3");
+    eq("compact key constant", COMPACT_HANDOFF_KEY, "compact-handoff");
+
+    const notesByKey = (repo: string | null, key: string): number[] => {
+      const rows = db
+        .prepare("SELECT id FROM notes WHERE key = ? AND repo IS NOT DISTINCT FROM ? ORDER BY id ASC")
+        .all(key, repo) as Array<{ id: number }>;
+      return rows.map((r) => r.id);
+    };
+
+    // 5 compact-handoffs in REPO_A; keep 3 → drop the 2 oldest.
+    const chIds = [
+      insertNote(REPO_A, COMPACT_HANDOFF_KEY, "ch-1", "2026-05-28T00:00:01.000Z"),
+      insertNote(REPO_A, COMPACT_HANDOFF_KEY, "ch-2", "2026-05-28T00:00:02.000Z"),
+      insertNote(REPO_A, COMPACT_HANDOFF_KEY, "ch-3", "2026-05-28T00:00:03.000Z"),
+      insertNote(REPO_A, COMPACT_HANDOFF_KEY, "ch-4", "2026-05-28T00:00:04.000Z"),
+      insertNote(REPO_A, COMPACT_HANDOFF_KEY, "ch-5", "2026-05-28T00:00:05.000Z"),
+    ];
+    // A session-rollup in REPO_A must be untouched by a compact-handoff prune (key isolation).
+    const survivingRollup = insertNote(REPO_A, "session-rollup", "still-here", "2026-05-28T00:00:06.000Z");
+
+    const deletedCh = pruneOldNotesByKey(db, COMPACT_HANDOFF_KEY, REPO_A, COMPACT_HANDOFF_RETENTION);
+    eq("compact prune deletes count", String(deletedCh), "2");
+    eq("compact prune keeps newest 3", notesByKey(REPO_A, COMPACT_HANDOFF_KEY).join(","), chIds.slice(2).join(","));
+    eq(
+      "compact prune leaves other-key notes",
+      String((db.prepare("SELECT id FROM notes WHERE id = ?").get(survivingRollup) as { id: number } | undefined)?.id),
+      String(survivingRollup),
+    );
+
+    // Pinned compact-handoff preserved beyond the window.
+    const chPinned = insertNote(REPO_A, COMPACT_HANDOFF_KEY, "ch-pinned-old", "2025-01-01T00:00:00.000Z");
+    setPin(chPinned, 1);
+    const deletedCh2 = pruneOldNotesByKey(db, COMPACT_HANDOFF_KEY, REPO_A, 1);
+    // 3 unpinned remained + 1 pinned; keep=1 drops 2 unpinned, preserves pinned.
+    eq("compact prune ignores pinned when counting", String(deletedCh2), "2");
+    eq(
+      "compact prune preserves pinned",
+      String((db.prepare("SELECT id FROM notes WHERE id = ?").get(chPinned) as { id: number } | undefined)?.id),
+      String(chPinned),
+    );
   } finally {
     db.close();
   }

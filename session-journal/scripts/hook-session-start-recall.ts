@@ -4,10 +4,11 @@
 //
 // Block order (most-important first, within MAX_OUTPUT budget):
 //   1. pinned notes (always-surface project facts)
-//   2. handoff: most recent /checkpoint, falling back to the auto session-rollup
-//   3. recent earlier notes (excluding pinned + handoff ids already shown, and excluding
-//      session-rollup notes — those are deterministic activity dumps that crowd out hand-written
-//      notes; the freshest rollup still surfaces via the handoff fallback when no checkpoint exists)
+//   2. handoff: most recent /checkpoint, then the PreCompact compact-handoff, then the auto
+//      session-rollup (preference order below)
+//   3. recent earlier notes (excluding pinned + handoff ids already shown, and excluding the
+//      deterministic activity dumps — session-rollup + compact-handoff — that would crowd out
+//      hand-written notes; the freshest of those still surfaces via the handoff fallback)
 
 import { openDb } from "./db.ts";
 import { readHookInput } from "./hooklib.ts";
@@ -18,7 +19,7 @@ const MAX_BODY = 220;
 const MAX_HANDOFF = 700;
 const MAX_OUTPUT = 2400;
 const MAX_PINNED = 3;
-const HANDOFF_KEYS = ["checkpoint", "session-rollup"];
+const HANDOFF_KEYS = ["checkpoint", "compact-handoff", "session-rollup"];
 
 type NoteRow = { id: number; key: string | null; body: string };
 
@@ -51,21 +52,23 @@ try {
       : "";
 
     const placeholders = HANDOFF_KEYS.map(() => "?").join(", ");
-    // Lead with the most recent *checkpoint* (deliberate, model-written handoff); only fall back to
-    // the auto session-rollup when no checkpoint exists in scope. Without this, the rollup written
-    // at SessionEnd (newer id) would shadow the checkpoint from the same session.
+    // Lead with the most recent *checkpoint* (deliberate, model-written handoff), then the
+    // PreCompact compact-handoff (mid-session, machine-written), then the auto session-rollup
+    // (end-of-session). The rank prevents a newer-id machine note from shadowing a real checkpoint
+    // from the same session.
     handoff = db
       .prepare(
         `SELECT id, key, body FROM notes WHERE ${scopeSql}${exclPinnedSql} AND key IN (${placeholders}) ` +
-          `ORDER BY CASE key WHEN 'checkpoint' THEN 0 ELSE 1 END ASC, id DESC LIMIT 1`,
+          `ORDER BY CASE key WHEN 'checkpoint' THEN 0 WHEN 'compact-handoff' THEN 1 ELSE 2 END ASC, id DESC LIMIT 1`,
       )
       .get(...scopeParams, ...pinnedIds, ...HANDOFF_KEYS) as NoteRow | undefined;
 
     const exclHandoffSql = handoff ? " AND id <> ?" : "";
-    // `key IS NULL` matches notes with no key; `key <> 'session-rollup'` matches everything else
-    // (rollups specifically excluded). NULL-safe — bare `key <> 'session-rollup'` would drop keyless
-    // notes too because comparisons with NULL yield NULL/false in SQL.
-    const exclRollupSql = " AND (key IS NULL OR key <> 'session-rollup')";
+    // `key IS NULL` matches notes with no key; the NOT IN (...) matches everything else except the
+    // deterministic activity dumps (session-rollup + compact-handoff), which are excluded here so
+    // they don't crowd the recent block — the freshest already surfaces as the handoff above.
+    // NULL-safe — a bare `key NOT IN (...)` would drop keyless notes (NULL comparisons yield NULL).
+    const exclRollupSql = " AND (key IS NULL OR key NOT IN ('session-rollup', 'compact-handoff'))";
     recent = db
       .prepare(
         `SELECT id, key, body FROM notes WHERE ${scopeSql}${exclPinnedSql}${exclHandoffSql}${exclRollupSql} ORDER BY id DESC LIMIT ?`,

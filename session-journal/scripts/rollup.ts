@@ -9,6 +9,12 @@ import type { DatabaseSync } from "node:sqlite";
  * usually has its own /checkpoint. Raw activity stays searchable via the `edits` table. */
 export const ROLLUP_RETENTION = 5;
 
+/** Key + retention for the v7 PreCompact handoff note (written before context compaction).
+ * These are even more transient than rollups — only the freshest matters as a "what was in
+ * flight when we compacted" handoff — so we keep fewer. */
+export const COMPACT_HANDOFF_KEY = "compact-handoff";
+export const COMPACT_HANDOFF_RETENTION = 3;
+
 export type EditRow = { tool: string; file_path: string | null; ts: string };
 export type SessionRow = {
   started_at: string | null;
@@ -74,17 +80,34 @@ export function formatRollup(session: SessionRow, edits: EditRow[], maxFiles = 8
 }
 
 /**
- * Prune older `session-rollup` notes within a repo scope, keeping the `keep` most recent.
- * Pinned rollups (rare, but if a user explicitly pinned one) are preserved unconditionally.
- *
- * Scope semantics match how rollups are stored: a row with `repo = null` is "no-repo session"
- * and is pruned only against other no-repo rollups. We use `IS NOT DISTINCT FROM` so the same
- * statement handles both cases without a NULL-vs-equality branch. Returns the number deleted.
+ * PURE: build the PreCompact handoff body. Reuses the deterministic rollup summary verbatim and
+ * prefixes a compaction marker (with the trigger when known) so the next session reads it as
+ * "we compacted here, this was in flight". Returns null when there's no rollup (no edits) — the
+ * hook then skips the insert, so read-only sessions don't leave a compaction note.
  */
-export function pruneOldRollups(
+export function formatCompactHandoff(
+  rollupBody: string | null,
+  trigger: string | null,
+): string | null {
+  if (!rollupBody) return null;
+  const tg = trigger === "manual" || trigger === "auto" ? ` (${trigger})` : "";
+  return `Context compacted${tg}. ${rollupBody}`;
+}
+
+/**
+ * Prune older notes with a given `key` within a repo scope, keeping the `keep` most recent.
+ * Pinned notes (if a user explicitly pinned one) are preserved unconditionally.
+ *
+ * Scope semantics match how these notes are stored: a row with `repo = null` is "no-repo session"
+ * and is pruned only against other no-repo notes of the same key. We use `IS NOT DISTINCT FROM` so
+ * the same statement handles both cases without a NULL-vs-equality branch. Returns the number
+ * deleted. Used for both `session-rollup` (SessionEnd) and `compact-handoff` (PreCompact) notes.
+ */
+export function pruneOldNotesByKey(
   db: DatabaseSync,
+  key: string,
   repo: string | null,
-  keep: number = ROLLUP_RETENTION,
+  keep: number,
 ): number {
   if (keep < 0) return 0;
   const info = db
@@ -92,13 +115,22 @@ export function pruneOldRollups(
       `DELETE FROM notes
        WHERE id IN (
          SELECT id FROM notes
-         WHERE key = 'session-rollup'
+         WHERE key = ?
            AND repo IS NOT DISTINCT FROM ?
            AND pinned = 0
          ORDER BY id DESC
          LIMIT -1 OFFSET ?
        )`,
     )
-    .run(repo, keep);
+    .run(key, repo, keep);
   return Number(info.changes);
+}
+
+/** Thin wrapper preserving the original `session-rollup` call site + semantics. */
+export function pruneOldRollups(
+  db: DatabaseSync,
+  repo: string | null,
+  keep: number = ROLLUP_RETENTION,
+): number {
+  return pruneOldNotesByKey(db, "session-rollup", repo, keep);
 }
