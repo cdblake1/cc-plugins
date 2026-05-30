@@ -2,6 +2,21 @@
 
 All notable changes to the **session-journal** plugin. Dates are UTC.
 
+## [0.7.0] — 2026-05-30
+### Added
+- **`/clarify-intent [what you want to build]` slash command.** Stakeholder-style requirement
+  gathering: the engineering team interviews you with a mix of multiple-choice (`AskUserQuestion`)
+  and open-ended questions across six requirement dimensions, composes a structured requirements
+  doc, then verifies it before you start building.
+- **`clarify-intent` skill** — the plugin's first skill. Holds the interview methodology and the
+  six dimensions (problem, users, scope, behavior, constraints, success/edge cases). Auto-triggers
+  when scoping a feature or pinning down intent before code is written. Markdown-only component,
+  auto-discovered from `skills/`; no bundle rebuild.
+- **`requirements-verifier` subagent.** Runs on `model: haiku` with no tools and a single pass:
+  reads the requirements doc inline and returns a READY/NOT-READY verdict with a per-dimension
+  coverage checklist and any blocking gaps. The skill loops on gaps (capped at 2 rounds), then
+  persists the final doc via `store` (`key: requirements`).
+
 ## [0.6.0] — 2026-05-26
 ### Added
 - **`forget` MCP tool.** Delete a stored note by `id`; bulk-delete by `key` requires
