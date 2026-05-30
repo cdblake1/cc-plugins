@@ -8,6 +8,12 @@ import { z } from "zod";
 import { openDb } from "../scripts/db.ts";
 import { gitContext } from "../scripts/gitctx.ts";
 import {
+  DEFAULT_CONTEXT_WINDOW,
+  latestTranscriptPath,
+  readLatestUsage,
+} from "../scripts/transcript.ts";
+import {
+  handleContextBudget,
   handleForget,
   handleJournal,
   handlePin,
@@ -15,7 +21,7 @@ import {
   handleStore,
 } from "./handlers.ts";
 
-const server = new McpServer({ name: "session-journal", version: "0.6.0" });
+const server = new McpServer({ name: "session-journal", version: "0.8.0" });
 
 // Repo this server is scoped to, derived from the project dir (exported by Claude Code).
 // Used to tag stored notes and to scope recall by default.
@@ -187,6 +193,32 @@ server.registerTool(
     } finally {
       db.close();
     }
+  },
+);
+
+server.registerTool(
+  "context_budget",
+  {
+    title: "Context budget",
+    description:
+      "Report how full the current session's context window is (live token occupancy read from " +
+      "the session transcript) and suggest when to /checkpoint + /compact. No DB access; reads the " +
+      "newest transcript for this project. Use when deciding whether to compact or clear.",
+    inputSchema: {
+      window_tokens: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe(`Context window size to measure against (default ${DEFAULT_CONTEXT_WINDOW}).`),
+    },
+  },
+  async ({ window_tokens }) => {
+    // IO lives here (not in the handler): locate the newest transcript for this project, read the
+    // latest usage, then hand the pure handler the numbers.
+    const path = latestTranscriptPath(PROJECT_DIR);
+    const usage = path ? readLatestUsage(path) : null;
+    return asText(handleContextBudget(usage, window_tokens ?? DEFAULT_CONTEXT_WINDOW));
   },
 );
 

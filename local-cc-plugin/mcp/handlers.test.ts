@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { openDb } from "../scripts/db.ts";
 import {
   ftsPhrase,
+  handleContextBudget,
   handleForget,
   handleJournal,
   handlePin,
@@ -14,6 +15,7 @@ import {
   handleStore,
   normalizeTags,
 } from "./handlers.ts";
+import type { ContextUsage } from "../scripts/transcript.ts";
 
 let failed = 0;
 function eq(name: string, got: unknown, want: unknown): void {
@@ -48,6 +50,17 @@ try {
   // -- ftsPhrase (pure)
   eq("ftsPhrase basic", ftsPhrase("hello world"), '"hello world"');
   eq("ftsPhrase escapes quote", ftsPhrase('say "hi"'), '"say ""hi"""');
+
+  // -- handleContextBudget (pure; no DB, no fs — server passes in the usage)
+  const usage = (cacheRead: number): ContextUsage => ({ input: 0, cacheRead, cacheCreate: 0, output: 9999 });
+  contains("budget null usage explains", handleContextBudget(null, 200000), "Couldn't read");
+  const okReport = handleContextBudget(usage(30000), 200000); // 15%
+  contains("budget ok shows pct", okReport, "(15%)");
+  contains("budget ok advises headroom", okReport, "Plenty of headroom");
+  contains("budget warn advises checkpoint", handleContextBudget(usage(140000), 200000), "getting large"); // 70%
+  contains("budget high advises compact now", handleContextBudget(usage(180000), 200000), "nearly full"); // 90%
+  contains("budget excludes output tokens", okReport, "~30k"); // output (9999) not counted
+  contains("budget custom window", handleContextBudget(usage(100000), 1000000), "(10%)");
 
   const REPO = "owner/repo";
   const OTHER = "owner/other";

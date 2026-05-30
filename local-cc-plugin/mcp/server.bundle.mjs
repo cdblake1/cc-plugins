@@ -21257,6 +21257,110 @@ function gitContext(cwd) {
   };
 }
 
+// scripts/transcript.ts
+import { closeSync, fstatSync, openSync, readdirSync, readSync, statSync } from "node:fs";
+import { homedir } from "node:os";
+import { join as join2 } from "node:path";
+var DEFAULT_CONTEXT_WINDOW = 2e5;
+var TAIL_BYTES = 256 * 1024;
+function finite(v) {
+  return typeof v === "number" && Number.isFinite(v) ? v : 0;
+}
+function parseUsageLine(line) {
+  if (!line) return null;
+  let obj;
+  try {
+    obj = JSON.parse(line);
+  } catch {
+    return null;
+  }
+  if (!obj || typeof obj !== "object") return null;
+  const o = obj;
+  if (o.type !== "assistant") return null;
+  const u = o.message?.usage;
+  if (!u || typeof u !== "object") return null;
+  const present = u.input_tokens != null || u.cache_read_input_tokens != null || u.cache_creation_input_tokens != null || u.output_tokens != null;
+  if (!present) return null;
+  return {
+    input: finite(u.input_tokens),
+    cacheRead: finite(u.cache_read_input_tokens),
+    cacheCreate: finite(u.cache_creation_input_tokens),
+    output: finite(u.output_tokens)
+  };
+}
+function liveContextTokens(u) {
+  return u.input + u.cacheRead + u.cacheCreate;
+}
+function fmtK(n) {
+  return n < 1e3 ? String(Math.max(0, Math.round(n))) : `${Math.round(n / 1e3)}k`;
+}
+function formatBudget(tokens, windowTokens = DEFAULT_CONTEXT_WINDOW) {
+  const win = windowTokens > 0 ? windowTokens : DEFAULT_CONTEXT_WINDOW;
+  const pct = Math.round(tokens / win * 100);
+  const tier = pct >= 90 ? "high" : pct >= 70 ? "warn" : "ok";
+  return { tokens, windowTokens: win, pct, tier, label: `~${fmtK(tokens)} / ${fmtK(win)} tokens (${pct}%)` };
+}
+function scanFromOffset(path, start) {
+  let fd;
+  try {
+    fd = openSync(path, "r");
+    const size = fstatSync(fd).size;
+    const from = Math.max(0, start);
+    const len = size - from;
+    if (len <= 0) return null;
+    const buf = Buffer.allocUnsafe(len);
+    readSync(fd, buf, 0, len, from);
+    const lines = buf.toString("utf8").split("\n");
+    if (from > 0 && lines.length > 1) lines.shift();
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const u = parseUsageLine(lines[i].trim());
+      if (u) return u;
+    }
+    return null;
+  } catch {
+    return null;
+  } finally {
+    if (fd !== void 0) {
+      try {
+        closeSync(fd);
+      } catch {
+      }
+    }
+  }
+}
+function readLatestUsage(transcriptPath, tailBytes = TAIL_BYTES) {
+  let size = 0;
+  try {
+    size = statSync(transcriptPath).size;
+  } catch {
+    return null;
+  }
+  const tailStart = Math.max(0, size - tailBytes);
+  const fromTail = scanFromOffset(transcriptPath, tailStart);
+  if (fromTail) return fromTail;
+  return tailStart > 0 ? scanFromOffset(transcriptPath, 0) : null;
+}
+function transcriptDirFor(projectDir, configDir) {
+  const base = configDir ?? process.env.CLAUDE_CONFIG_DIR ?? join2(homedir(), ".claude");
+  const slug = projectDir.replace(/[^A-Za-z0-9]/g, "-");
+  return join2(base, "projects", slug);
+}
+function latestTranscriptPath(projectDir, configDir) {
+  try {
+    const dir = transcriptDirFor(projectDir, configDir);
+    let best = null;
+    for (const f of readdirSync(dir)) {
+      if (!f.endsWith(".jsonl")) continue;
+      const p = join2(dir, f);
+      const mtime = statSync(p).mtimeMs;
+      if (!best || mtime > best.mtime) best = { path: p, mtime };
+    }
+    return best?.path ?? null;
+  } catch {
+    return null;
+  }
+}
+
 // mcp/handlers.ts
 function normalizeTags(tags) {
   if (!tags?.length) return [];
@@ -21364,6 +21468,14 @@ function handleJournal(db, input, currentRepo) {
   return `Recent edits for ${currentRepo}:
 ${text}`;
 }
+function handleContextBudget(usage, windowTokens) {
+  if (!usage) {
+    return "Couldn't read the current session transcript to measure context usage (no transcript found, or it has no token data yet).";
+  }
+  const b = formatBudget(liveContextTokens(usage), windowTokens);
+  const advice = b.tier === "high" ? "Context is nearly full \u2014 run /checkpoint to save a handoff, then /compact (or /clear)." : b.tier === "warn" ? "Context is getting large \u2014 consider /checkpoint then /compact at the next natural break." : "Plenty of headroom.";
+  return `Context budget: ${b.label}. ${advice}`;
+}
 function fetchTagsFor(db, ids) {
   const out = /* @__PURE__ */ new Map();
   if (ids.length === 0) return out;
@@ -21378,7 +21490,7 @@ function fetchTagsFor(db, ids) {
 }
 
 // mcp/server.ts
-var server = new McpServer({ name: "session-journal", version: "0.6.0" });
+var server = new McpServer({ name: "session-journal", version: "0.8.0" });
 var PROJECT_DIR = process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
 var CURRENT_REPO = gitContext(PROJECT_DIR).repo;
 function asText(text) {
@@ -21485,6 +21597,21 @@ server.registerTool(
     } finally {
       db.close();
     }
+  }
+);
+server.registerTool(
+  "context_budget",
+  {
+    title: "Context budget",
+    description: "Report how full the current session's context window is (live token occupancy read from the session transcript) and suggest when to /checkpoint + /compact. No DB access; reads the newest transcript for this project. Use when deciding whether to compact or clear.",
+    inputSchema: {
+      window_tokens: external_exports.number().int().positive().optional().describe(`Context window size to measure against (default ${DEFAULT_CONTEXT_WINDOW}).`)
+    }
+  },
+  async ({ window_tokens }) => {
+    const path = latestTranscriptPath(PROJECT_DIR);
+    const usage = path ? readLatestUsage(path) : null;
+    return asText(handleContextBudget(usage, window_tokens ?? DEFAULT_CONTEXT_WINDOW));
   }
 );
 var transport = new StdioServerTransport();

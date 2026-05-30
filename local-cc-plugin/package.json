@@ -6,7 +6,7 @@
   "description": "Build-time deps for the session-journal MCP server. These are bundled into mcp/server.bundle.mjs by `npm run build` and are NOT needed at runtime.",
   "scripts": {
     "build": "node build.mjs",
-    "test": "node --experimental-strip-types --no-warnings scripts/guardrail.test.ts && node --experimental-strip-types --no-warnings scripts/checks.test.ts && node --experimental-strip-types --no-warnings scripts/gitctx.test.ts && node --experimental-strip-types --no-warnings scripts/rollup.test.ts && node --experimental-strip-types --no-warnings scripts/apply-view-prefs.test.ts && node --experimental-strip-types --no-warnings scripts/db.test.ts && node --experimental-strip-types --no-warnings mcp/handlers.test.ts"
+    "test": "node --experimental-strip-types --no-warnings scripts/guardrail.test.ts && node --experimental-strip-types --no-warnings scripts/checks.test.ts && node --experimental-strip-types --no-warnings scripts/gitctx.test.ts && node --experimental-strip-types --no-warnings scripts/rollup.test.ts && node --experimental-strip-types --no-warnings scripts/transcript.test.ts && node --experimental-strip-types --no-warnings scripts/apply-view-prefs.test.ts && node --experimental-strip-types --no-warnings scripts/db.test.ts && node --experimental-strip-types --no-warnings mcp/handlers.test.ts"
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
