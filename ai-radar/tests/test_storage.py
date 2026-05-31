@@ -57,6 +57,39 @@ def test_query_filters(store: Store):
     assert len(store.query_documents(topic="ai", limit=1)) == 1
 
 
+def test_migration_adds_summary_columns_to_old_db(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "old.db"
+    conn = sqlite3.connect(str(path))
+    # v1-era documents table: no summary_* columns.
+    conn.executescript(
+        """
+        CREATE TABLE documents (
+          id INTEGER PRIMARY KEY AUTOINCREMENT, run_id INTEGER, source TEXT NOT NULL,
+          content_type TEXT NOT NULL, external_id TEXT NOT NULL, url TEXT NOT NULL,
+          title TEXT, author TEXT, publish_date TEXT, fetched_at TEXT NOT NULL,
+          topic TEXT NOT NULL, lang TEXT, content TEXT NOT NULL, meta_json TEXT,
+          UNIQUE(source, external_id));
+        INSERT INTO documents (source, content_type, external_id, url, title, fetched_at, topic, content)
+        VALUES ('rss','article','e1','http://x/1','Old Title','2026-05-31T00:00:00Z','ai','body text');
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    s = Store.open(path)  # opening runs the migration
+    cols = {r["name"] for r in s.conn.execute("PRAGMA table_info(documents)").fetchall()}
+    assert {"summary_json", "summary_model", "summarized_at"} <= cols
+
+    pending = s.unsummarized_documents(model="claude-sonnet-4-6")
+    assert len(pending) == 1
+    s.save_doc_summary(pending[0]["id"], summary_json='{"main_idea":"x"}',
+                       model="claude-sonnet-4-6", at="2026-05-31T00:00:00Z")
+    assert s.unsummarized_documents(model="claude-sonnet-4-6") == []
+    s.close()
+
+
 def test_summary_roundtrip(store: Store):
     sid = store.save_summary(
         topic="ai", mode="extractive", model=None, document_ids=[1, 2],

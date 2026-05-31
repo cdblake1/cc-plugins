@@ -1,27 +1,42 @@
 # Topics the scheduled digest tracks each run. Edit freely.
 topics:
   - "agentic coding"
-  - "LLM evaluation and benchmarks"
   - "AI agents and tool use"
-  - "retrieval augmented generation"
-  - "model releases and updates"
-  - "AI engineering and infrastructure"
+  - "LLM agent orchestration and multi-agent systems"
+  - "retrieval augmented generation and vector search"
+  - "LLM evaluation and benchmarks"
+  - "fine-tuning and parameter efficient methods (LoRA, PEFT)"
+  - "RLHF and alignment"
+  - "AI safety and interpretability"
+  - "multimodal and vision-language models"
+  - "inference optimization and quantization"
+  - "long context and memory"
+  - "mixture of experts architectures"
   - "reasoning and chain of thought"
+  - "code generation and software engineering agents"
   - "open source language models"
+  - "model releases and updates"
+  - "AI engineering, infrastructure and MLOps"
+  - "diffusion and image generation"
+  - "speech and audio models"
+  - "prompt engineering"
 
-# Rolling window for each run (days back from today).
-since_days: 2
+# Rolling window for each run (days back from today). The daily digest looks back this far.
+since_days: 7
 
 # Per-source result cap per topic.
-max_per_source: 5
+max_per_source: 15
 
-# Which sources to pull: "all" or a comma list (arxiv,rss,hackernews,youtube).
+# Which sources to pull: "all" or a comma list
+# (arxiv,semanticscholar,paperswithcode,rss,hackernews,github,youtube).
 sources: all
 
+# Summarization settings.
+#   mode: claude (uses ANTHROPIC_API_KEY; falls back to free extractive if absent) | extractive | emit
+#   model: any key in config.PRICING (claude-haiku-4-5 / claude-sonnet-4-6 / claude-opus-4-8)
+#   max_cost_usd: per-run budget ceiling. Per-doc summaries are cached, so cost accrues across
+#                 runs until the backlog is summarized — each run stops once this is hit.
 summarize:
-  # claude | extractive | emit. claude needs ANTHROPIC_API_KEY; falls back to
-  # extractive automatically if the key is missing or the per-topic estimate exceeds
-  # max_cost_usd below (a safety ceiling for the automated paid path).
   mode: claude
-  model: claude-haiku-4-5
-  max_cost_usd: 0.50
+  model: claude-sonnet-4-6
+  max_cost_usd: 5.00

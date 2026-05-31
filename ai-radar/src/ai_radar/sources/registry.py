@@ -9,7 +9,9 @@ from __future__ import annotations
 from .base import Source
 
 #: canonical order used when --sources all is requested
-ALL_SOURCES = ["arxiv", "rss", "hackernews", "youtube"]
+ALL_SOURCES = [
+    "arxiv", "semanticscholar", "paperswithcode", "rss", "hackernews", "github", "youtube",
+]
 
 
 def get_source(name: str) -> Source:
@@ -17,12 +19,21 @@ def get_source(name: str) -> Source:
     if name == "arxiv":
         from .arxiv import ArxivSource
         return ArxivSource()
+    if name == "semanticscholar":
+        from .semanticscholar import SemanticScholarSource
+        return SemanticScholarSource()
+    if name == "paperswithcode":
+        from .paperswithcode import PapersWithCodeSource
+        return PapersWithCodeSource()
     if name == "rss":
         from .rss import RssSource
         return RssSource()
     if name == "hackernews":
         from .hackernews import HackerNewsSource
         return HackerNewsSource()
+    if name == "github":
+        from .github import GitHubSource
+        return GitHubSource()
     if name == "youtube":
         from .youtube import YouTubeSource
         return YouTubeSource()

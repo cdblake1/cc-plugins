@@ -21,11 +21,14 @@ API = "http://export.arxiv.org/api/query"
 class ArxivSource(Source):
     name = "arxiv"
 
-    def __init__(self, categories: list[str] | None = None):
+    def __init__(self, categories: list[str] | None = None, *,
+                 fetch_fulltext: bool = True, max_chars: int = 56000):
         # Default categories come from feeds.yaml; allow override for tests.
         self.categories = categories if categories is not None else load_feeds().get(
             "arxiv_categories", []
         )
+        self.fetch_fulltext = fetch_fulltext
+        self.max_chars = max_chars  # ~16k tokens
 
     def _build_query(self, params: FetchParams) -> str:
         cat_clause = " OR ".join(f"cat:{c}" for c in self.categories) if self.categories else ""
@@ -83,10 +86,34 @@ class ArxivSource(Source):
 
     def fetch_content(self, item: SourceItem) -> tuple[str, str | None]:
         abstract = (item.meta or {}).get("abstract", "").strip()
-        if not abstract:
-            raise ContentUnavailable(f"no abstract for {item.external_id}")
         header = item.title or item.external_id
-        return f"{header}\n\n{abstract}", "en"
+        # Prefer full text (arXiv HTML / ar5iv) so summaries capture real findings, not just
+        # the abstract. Fall back to the abstract on any failure.
+        if self.fetch_fulltext:
+            full = self._fetch_html(item.external_id)
+            if full and len(full) > len(abstract) * 1.2:
+                return f"{header}\n\n{full[: self.max_chars]}", "en"
+        if abstract:
+            return f"{header}\n\n{abstract}", "en"
+        raise ContentUnavailable(f"no content for {item.external_id}")
+
+    def _fetch_html(self, arxiv_id: str) -> str | None:
+        from ..textutil import clean_text
+
+        base = arxiv_id.split("v")[0] if "v" in arxiv_id else arxiv_id
+        for url in (
+            f"https://arxiv.org/html/{arxiv_id}",
+            f"https://arxiv.org/html/{base}",
+            f"https://ar5iv.org/html/{base}",
+        ):
+            try:
+                raw = net.get(url, timeout=30).decode("utf-8", "replace")
+            except (net.HTTPError, net.URLError, OSError):
+                continue
+            text = clean_text(raw)
+            if len(text) > 500:
+                return text
+        return None
 
 
 def _submitted_date_clause(since: str | None, until: str | None) -> str:

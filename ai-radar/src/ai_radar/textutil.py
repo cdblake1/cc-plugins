@@ -5,10 +5,27 @@ Deliberately dependency-free so storage.py (stdlib-only) can use it.
 
 from __future__ import annotations
 
+import html
 import re
 from collections import Counter
 
 _WORD_RE = re.compile(r"[a-zA-Z][a-zA-Z0-9'+-]{2,}")
+_TAG_RE = re.compile(r"<[^>]+>")
+_WS_RE = re.compile(r"\s+")
+
+
+def clean_text(raw: str) -> str:
+    """Unescape HTML entities (e.g. &#x2F; → /), strip tags, collapse whitespace.
+
+    Shared by the RSS/HN/arXiv/etc. sources so stored content is clean for both reading
+    and summarization.
+    """
+    if not raw:
+        return ""
+    unescaped = html.unescape(raw)
+    stripped = _TAG_RE.sub(" ", unescaped)
+    # A second unescape catches entities that were hidden inside tags.
+    return _WS_RE.sub(" ", html.unescape(stripped)).strip()
 
 STOPWORDS = set(
     """the a an and or but if then else for to of in on at by with from as is are was were be been

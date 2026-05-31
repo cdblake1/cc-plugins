@@ -29,7 +29,7 @@ on:
       months:
         description: "backfill: how many months back"
         required: false
-        default: "3"
+        default: "6"
       window:
         description: "backfill: window size"
         type: choice
@@ -94,7 +94,7 @@ jobs:
         env:
           TASK: ${{ github.event.inputs.task || 'digest' }}
           TOPIC: ${{ github.event.inputs.topic }}
-          MONTHS: ${{ github.event.inputs.months || '3' }}
+          MONTHS: ${{ github.event.inputs.months || '6' }}
           WINDOW: ${{ github.event.inputs.window || 'weekly' }}
           SOURCES: ${{ github.event.inputs.sources || 'all' }}
           CHANNEL: ${{ github.event.inputs.channel }}
@@ -119,10 +119,11 @@ jobs:
               [ -n "$SINCE" ] && args+=(--since "$SINCE")
               ai-radar "${args[@]}"
               ;;
-            *)
-              ai-radar digest --out-dir digests
-              ;;
           esac
+          # Always (re)build the digest: produces the per-doc Sonnet summaries (budget-capped
+          # and cached, so a big backfill's summaries catch up across runs) plus the curated
+          # digest markdown. For the `digest` task this also does the fetch.
+          ai-radar digest --out-dir digests
 
       - name: Build wiki + site
         run: |

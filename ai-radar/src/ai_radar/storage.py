@@ -55,9 +55,13 @@ CREATE TABLE IF NOT EXISTS summaries (
 
 CREATE INDEX IF NOT EXISTS idx_documents_topic ON documents(topic);
 CREATE INDEX IF NOT EXISTS idx_documents_run   ON documents(run_id);
+"""
 
--- Full-text index for weighted (BM25) search and "related" cross-referencing.
--- External-content table mirrors documents; kept in sync by the triggers below.
+# Full-text index for weighted (BM25) search + "related" cross-referencing. The external-
+# content FTS table records the `documents` shape at creation time, so it is (re)created
+# AFTER column migrations — ALTER TABLE on the content table otherwise corrupts the index.
+# Triggers use COALESCE(title,'') to match how the index is populated (NULL titles allowed).
+FTS_SCHEMA = """
 CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(
   title, content, content='documents', content_rowid='id'
 );
@@ -78,6 +82,14 @@ CREATE TRIGGER IF NOT EXISTS documents_au AFTER UPDATE ON documents BEGIN
 END;
 """
 
+# Drops to rebuild the FTS layer cleanly after a migration (order: triggers, then table).
+FTS_DROP = """
+DROP TRIGGER IF EXISTS documents_ai;
+DROP TRIGGER IF EXISTS documents_ad;
+DROP TRIGGER IF EXISTS documents_au;
+DROP TABLE IF EXISTS documents_fts;
+"""
+
 
 class Store:
     """Thin DAO over a SQLite connection."""
@@ -86,15 +98,42 @@ class Store:
         self.conn = conn
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA foreign_keys = ON")
+        # 1) base tables, 2) column migrations, 3) (re)build the FTS layer against the final
+        #    `documents` shape. Doing FTS last avoids ALTER-TABLE-corrupts-external-content.
         self.conn.executescript(SCHEMA)
         self.conn.commit()
-        self._sync_fts()
+        migrated = self._migrate()
+        self._build_fts(force_rebuild=migrated)
 
-    def _sync_fts(self) -> None:
-        """Populate the FTS index for rows that predate it (idempotent, self-correcting)."""
+    def _migrate(self) -> bool:
+        """Add columns introduced after the initial schema (idempotent). Returns True if it altered."""
+        cols = {r["name"] for r in self.conn.execute("PRAGMA table_info(documents)").fetchall()}
+        changed = False
+        for name, decl in (
+            ("summary_json", "TEXT"),
+            ("summary_model", "TEXT"),
+            ("summarized_at", "TEXT"),
+        ):
+            if name not in cols:
+                self.conn.execute(f"ALTER TABLE documents ADD COLUMN {name} {decl}")
+                changed = True
+        self.conn.commit()
+        return changed
+
+    def _build_fts(self, *, force_rebuild: bool) -> None:
+        """Create the FTS table + triggers (after migration) and populate when needed.
+
+        On a migrated DB the FTS layer is dropped and recreated so it references the new
+        table shape, then rebuilt — ALTER TABLE on an external-content table corrupts the
+        existing index otherwise.
+        """
+        if force_rebuild:
+            self.conn.executescript(FTS_DROP)
+        self.conn.executescript(FTS_SCHEMA)
+        self.conn.commit()
         docs = self.conn.execute("SELECT count(*) FROM documents").fetchone()[0]
         indexed = self.conn.execute("SELECT count(*) FROM documents_fts").fetchone()[0]
-        if docs != indexed:
+        if force_rebuild or docs != indexed:
             self.conn.execute("INSERT INTO documents_fts(documents_fts) VALUES('rebuild')")
             self.conn.commit()
 
@@ -237,6 +276,37 @@ class Store:
             "SELECT topic, count(*) c FROM documents GROUP BY topic ORDER BY c DESC"
         ).fetchall()
         return [r["topic"] for r in rows]
+
+    # --- per-document summaries (map step) --------------------------------
+
+    def unsummarized_documents(
+        self, *, model: str, topic: str | None = None, since: str | None = None,
+        limit: int | None = None,
+    ) -> list[dict]:
+        """Documents lacking a cached summary for `model` (newest first)."""
+        sql = (
+            "SELECT * FROM documents "
+            "WHERE (summary_json IS NULL OR summary_model != ?)"
+        )
+        args: list[object] = [model]
+        if topic is not None:
+            sql += " AND topic = ?"
+            args.append(topic)
+        if since is not None:
+            sql += " AND COALESCE(publish_date, fetched_at) >= ?"
+            args.append(since)
+        sql += " ORDER BY COALESCE(publish_date, fetched_at) DESC, id DESC"
+        if limit is not None:
+            sql += " LIMIT ?"
+            args.append(limit)
+        return [dict(r) for r in self.conn.execute(sql, args).fetchall()]
+
+    def save_doc_summary(self, doc_id: int, *, summary_json: str, model: str, at: str) -> None:
+        self.conn.execute(
+            "UPDATE documents SET summary_json = ?, summary_model = ?, summarized_at = ? WHERE id = ?",
+            (summary_json, model, at, doc_id),
+        )
+        self.conn.commit()
 
     # --- summaries ---------------------------------------------------------
 
