@@ -107,7 +107,9 @@ def test_hackernews_discover_and_content(monkeypatch):
     item = items[0]
     assert item.external_id == "111" and item.content_type == "discussion"
     text, _ = src.fetch_content(item)
-    assert "Agentic coding tools" in text and "Discussion:" in text
+    # Body is the title (+ self text) only; link/discussion URLs live in meta/url now.
+    assert "Agentic coding tools" in text
+    assert "Discussion:" not in text and "Link:" not in text
 
 
 # --- YouTube ---------------------------------------------------------------

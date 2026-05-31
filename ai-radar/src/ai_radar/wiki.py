@@ -7,6 +7,7 @@ from the FTS index / shared salient terms — no embeddings, no API calls.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from .storage import Store
@@ -72,6 +73,16 @@ def _render_index(topic_list: list[str], docs_by_topic: dict[str, list[dict]]) -
     return "\n".join(lines)
 
 
+def _load_brief(doc: dict) -> dict | None:
+    raw = doc.get("summary_json")
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return None
+
+
 def _render_topic_page(store: Store, topic: str, docs: list[dict], term_map: dict[str, set[str]]) -> str:
     lines = [f"# {topic}", "", "[← index](index.md)", ""]
 
@@ -87,14 +98,23 @@ def _render_topic_page(store: Store, topic: str, docs: list[dict], term_map: dic
             lines.append(f"- [{other}]({slug(other)}.md) — {overlap} shared term(s)")
         lines.append("")
 
-    # Source references.
+    # Source references — each with its main idea / key findings + related cross-links.
     lines += [f"## Sources ({len(docs)})", ""]
     for d in docs:
         d_date = d.get("publish_date") or (d.get("fetched_at") or "")[:10]
         title = d.get("title") or d["url"]
         author = d.get("author") or "unknown"
-        lines.append(f"- [{title}]({d['url']}) — {d['source']} · {author} · {d_date}")
-    lines.append("")
+        lines += [f"### [{title}]({d['url']})", f"*{d['source']} · {author} · {d_date}*", ""]
+        brief = _load_brief(d)
+        if brief:
+            if brief.get("main_idea"):
+                lines += [f"**Main idea:** {brief['main_idea']}", ""]
+            if brief.get("key_findings"):
+                lines += ["**Key findings:**"] + [f"- {f}" for f in brief["key_findings"]] + [""]
+        related = store.related(d["id"], limit=3)
+        if related:
+            links = " · ".join(f"[{(r.get('title') or r['url'])[:50]}]({r['url']})" for r in related)
+            lines += [f"**Related:** {links}", ""]
 
     # Cross-topic "related reading": documents from OTHER topics that match this topic.
     cross = store.search(topic, limit=8)

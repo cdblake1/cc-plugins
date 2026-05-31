@@ -17,6 +17,34 @@ from .textutil import top_terms
 from .wiki import related_topics, slug
 
 
+def _load_brief(doc: dict) -> dict | None:
+    raw = doc.get("summary_json")
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return None
+
+
+def _site_doc(store: Store, d: dict) -> dict:
+    brief = _load_brief(d) or {}
+    return {
+        "title": d.get("title") or d["url"],
+        "url": d["url"],
+        "source": d["source"],
+        "author": d.get("author") or "",
+        "date": d.get("publish_date") or (d.get("fetched_at") or "")[:10],
+        "snippet": (d.get("content") or "")[:240],
+        "main_idea": brief.get("main_idea", ""),
+        "key_findings": brief.get("key_findings", []),
+        "related": [
+            {"title": (r.get("title") or r["url"])[:70], "url": r["url"], "topic": r["topic"]}
+            for r in store.related(d["id"], limit=3)
+        ],
+    }
+
+
 def build_site(store: Store, out_dir: str | Path, *, title: str = "AI Radar") -> dict:
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -40,17 +68,7 @@ def build_site(store: Store, out_dir: str | Path, *, title: str = "AI Radar") ->
                     {"name": o, "slug": slug(o), "shared": n}
                     for o, n in related_topics(term_map, t)
                 ],
-                "docs": [
-                    {
-                        "title": d.get("title") or d["url"],
-                        "url": d["url"],
-                        "source": d["source"],
-                        "author": d.get("author") or "",
-                        "date": d.get("publish_date") or (d.get("fetched_at") or "")[:10],
-                        "snippet": (d["content"] or "")[:240],
-                    }
-                    for d in docs_by_topic[t]
-                ],
+                "docs": [_site_doc(store, d) for d in docs_by_topic[t]],
             }
             for t in topics
         ],
@@ -102,6 +120,12 @@ _TEMPLATE = """<!doctype html>
   .doc a { color:var(--accent); text-decoration:none; font-weight:600; }
   .doc .d-meta { color:var(--muted); font-size:12px; margin:2px 0; }
   .doc .d-snip { color:var(--fg); font-size:13px; opacity:.85; }
+  .doc .d-idea { color:var(--fg); font-size:13px; margin:4px 0; }
+  .doc .d-idea b, .doc .d-find-h { color:var(--accent); }
+  .doc .d-find { margin:4px 0 4px 18px; padding:0; font-size:13px; color:var(--fg); opacity:.9; }
+  .doc .d-find li { margin:1px 0; }
+  .doc .d-rel { font-size:12px; color:var(--muted); margin-top:4px; }
+  .doc .d-rel a { color:var(--accent); text-decoration:none; }
   .badge { display:inline-block; font-size:11px; padding:1px 6px; border-radius:10px;
            border:1px solid var(--border); color:var(--muted); margin-right:6px; }
   .hidden { display:none; } mark { background:#473d12; color:#f2cc60; }
@@ -136,13 +160,29 @@ function topicHTML(t){
     ? `<div class="related">Related: ` +
        t.related.map(r=>`<a href="#${r.slug}">${esc(r.name)}</a>`).join(' · ') + `</div>` : '';
   const summary = t.summary ? `<div class="summary">${esc(t.summary)}</div>` : '';
-  const docs = t.docs.map(d => `
+  const docs = t.docs.map(d => docHTML(d)).join('');
+  return `<section class="topic" id="${t.slug}"><h2>${esc(t.name)}</h2>${summary}${rel}${docs}</section>`;
+}
+function docHTML(d, topicName){
+  const idea = d.main_idea ? `<div class="d-idea"><b>Main idea:</b> ${esc(d.main_idea)}</div>` : '';
+  const finds = (d.key_findings && d.key_findings.length)
+    ? `<div class="d-find-h" style="font-size:13px;font-weight:600;">Key findings</div>`
+      + `<ul class="d-find">` + d.key_findings.map(f=>`<li>${esc(f)}</li>`).join('') + `</ul>`
+    : '';
+  const body = (idea || finds) ? (idea + finds) : `<div class="d-snip">${esc(d.snippet)}</div>`;
+  const rel = (d.related && d.related.length)
+    ? `<div class="d-rel">Related: ` +
+       d.related.map(r=>`<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title)}</a>`).join(' · ') +
+       `</div>` : '';
+  const meta = topicName
+    ? `<span class="badge">${esc(d.source)}</span>${esc(topicName)} · ${esc(d.date)}`
+    : `<span class="badge">${esc(d.source)}</span>${esc(d.author)} · ${esc(d.date)}`;
+  return `
     <div class="doc">
       <a href="${esc(d.url)}" target="_blank" rel="noopener">${esc(d.title)}</a>
-      <div class="d-meta"><span class="badge">${esc(d.source)}</span>${esc(d.author)} · ${esc(d.date)}</div>
-      <div class="d-snip">${esc(d.snippet)}</div>
-    </div>`).join('');
-  return `<section class="topic" id="${t.slug}"><h2>${esc(t.name)}</h2>${summary}${rel}${docs}</section>`;
+      <div class="d-meta">${meta}</div>
+      ${body}${rel}
+    </div>`;
 }
 function renderAll(){ main.innerHTML = DATA.topics.map(topicHTML).join(''); }
 
@@ -152,7 +192,8 @@ function search(query){
   const hits = [];
   for(const t of DATA.topics){
     for(const d of t.docs){
-      const hay = (d.title+' '+d.snippet+' '+t.name).toLowerCase();
+      const findText = (d.key_findings||[]).join(' ');
+      const hay = (d.title+' '+d.snippet+' '+(d.main_idea||'')+' '+findText+' '+t.name).toLowerCase();
       let score = 0;
       for(const w of qs){ const inT=(d.title||'').toLowerCase().includes(w);
         if(hay.includes(w)) score += inT ? 3 : 1; }
@@ -161,12 +202,8 @@ function search(query){
   }
   hits.sort((a,b)=>b.score-a.score);
   main.innerHTML = hits.length
-    ? `<section class="topic"><h2>${hits.length} result(s)</h2>` + hits.map(h=>`
-        <div class="doc">
-          <a href="${esc(h.d.url)}" target="_blank" rel="noopener">${esc(h.d.title)}</a>
-          <div class="d-meta"><span class="badge">${esc(h.d.source)}</span>${esc(h.t.name)} · ${esc(h.d.date)}</div>
-          <div class="d-snip">${esc(h.d.snippet)}</div>
-        </div>`).join('') + `</section>`
+    ? `<section class="topic"><h2>${hits.length} result(s)</h2>`
+      + hits.map(h=>docHTML(h.d, h.t.name)).join('') + `</section>`
     : `<section class="topic"><h2>No results</h2></section>`;
 }
 let timer; q.addEventListener('input', ()=>{ clearTimeout(timer); timer=setTimeout(()=>search(q.value),120); });

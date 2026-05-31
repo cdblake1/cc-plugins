@@ -7,17 +7,13 @@ topic. Dead/unreachable feeds are skipped silently so one stale URL never breaks
 
 from __future__ import annotations
 
-import re
-
 import feedparser
 
 from .. import net
 from ..config import load_feeds
 from ..models import FetchParams, SourceItem
+from ..textutil import clean_text
 from .base import ContentUnavailable, Source
-
-_TAG_RE = re.compile(r"<[^>]+>")
-_WS_RE = re.compile(r"\s+")
 
 
 class RssSource(Source):
@@ -52,7 +48,7 @@ class RssSource(Source):
                     continue
                 if params.until and published and published >= params.until:
                     continue
-                text = _clean(_entry_text(entry))
+                text = clean_text(_entry_text(entry))
                 title = (entry.get("title") or "").strip()
                 if topic and topic not in f"{title} {text}".lower():
                     continue
@@ -89,10 +85,6 @@ def _entry_text(entry) -> str:
     if content and isinstance(content, list) and content:
         return content[0].get("value", "") or entry.get("summary", "")
     return entry.get("summary", "") or entry.get("description", "")
-
-
-def _clean(html: str) -> str:
-    return _WS_RE.sub(" ", _TAG_RE.sub(" ", html or "")).strip()
 
 
 def _iso_date(entry) -> str | None:

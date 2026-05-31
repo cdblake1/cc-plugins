@@ -8,12 +8,12 @@ from __future__ import annotations
 
 import datetime as dt
 import json
-import re
 import urllib.parse
 
 from .. import net
 from ..config import load_feeds
 from ..models import FetchParams, SourceItem
+from ..textutil import clean_text
 from .base import ContentUnavailable, Source
 
 API = "http://hn.algolia.com/api/v1/search_by_date"
@@ -56,7 +56,7 @@ class HackerNewsSource(Source):
         for hit in data.get("hits", []):
             object_id = str(hit.get("objectID", ""))
             title = hit.get("title") or hit.get("story_title") or ""
-            story_text = _strip(hit.get("story_text") or hit.get("comment_text") or "")
+            story_text = clean_text(hit.get("story_text") or hit.get("comment_text") or "")
             external_url = hit.get("url")
             discussion_url = f"https://news.ycombinator.com/item?id={object_id}"
             items.append(
@@ -80,13 +80,12 @@ class HackerNewsSource(Source):
         return items
 
     def fetch_content(self, item: SourceItem) -> tuple[str, str | None]:
+        # Body = title + any self-text only; the link/discussion URLs live in meta/url,
+        # not stuffed into the content (keeps summaries clean).
         meta = item.meta or {}
         parts = [item.title or ""]
         if meta.get("story_text"):
             parts.append(meta["story_text"])
-        if meta.get("link"):
-            parts.append(f"Link: {meta['link']}")
-        parts.append(f"Discussion: {meta.get('discussion_url', item.url)}")
         text = "\n\n".join(p for p in parts if p).strip()
         if not text:
             raise ContentUnavailable(f"empty HN item {item.external_id}")
@@ -101,10 +100,3 @@ def _since_unix(since: str | None) -> int | None:
         return int(d.timestamp())
     except ValueError:
         return None
-
-
-_TAG_RE = re.compile(r"<[^>]+>")
-
-
-def _strip(text: str) -> str:
-    return _TAG_RE.sub(" ", text or "").strip()

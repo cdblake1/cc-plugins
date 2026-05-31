@@ -11,6 +11,7 @@ arxiv_categories:
   - cs.NE   # Neural and Evolutionary Computing
   - cs.MA   # Multi-Agent Systems
   - cs.SE   # Software Engineering
+  - cs.IR   # Information Retrieval (RAG, search)
   - stat.ML # Statistics — Machine Learning
 
 # RSS/Atom feeds for the `rss` source. Covers BOTH AI news AND key creator/lab blogs.
@@ -19,22 +20,36 @@ rss_feeds:
   labs_and_creators:
     - { name: "OpenAI", url: "https://openai.com/news/rss.xml" }
     - { name: "Google DeepMind", url: "https://deepmind.google/blog/rss.xml" }
+    - { name: "Google Research", url: "https://research.google/blog/rss/" }
     - { name: "Microsoft Research", url: "https://www.microsoft.com/en-us/research/feed/" }
+    - { name: "Meta AI", url: "https://ai.meta.com/blog/rss/" }
     - { name: "NVIDIA Blog", url: "https://blogs.nvidia.com/feed/" }
     - { name: "Hugging Face Blog", url: "https://huggingface.co/blog/feed.xml" }
+    - { name: "Cohere", url: "https://cohere.com/blog/rss.xml" }
+    - { name: "Stability AI", url: "https://stability.ai/news?format=rss" }
+    - { name: "Allen Institute for AI (AI2)", url: "https://allenai.org/blog/feed.xml" }
     - { name: "BAIR (Berkeley AI Research)", url: "https://bair.berkeley.edu/blog/feed.xml" }
     - { name: "EleutherAI", url: "https://blog.eleuther.ai/index.xml" }
+    - { name: "Together AI", url: "https://www.together.ai/blog/rss.xml" }
+    - { name: "Databricks", url: "https://www.databricks.com/blog/feed" }
     - { name: "LangChain Blog", url: "https://blog.langchain.dev/rss/" }
+    - { name: "LlamaIndex", url: "https://www.llamaindex.ai/blog/feed.xml" }
+    - { name: "Weights & Biases", url: "https://wandb.ai/fully-connected/rss.xml" }
     - { name: "MIT News — AI", url: "https://news.mit.edu/topic/mitartificial-intelligence2-rss.xml" }
+    - { name: "Stanford HAI", url: "https://hai.stanford.edu/news/rss.xml" }
 
   individuals:
     - { name: "Sebastian Raschka (Ahead of AI)", url: "https://magazine.sebastianraschka.com/feed" }
     - { name: "Lilian Weng (Lil'Log)", url: "https://lilianweng.github.io/index.xml" }
+    - { name: "Andrej Karpathy", url: "https://karpathy.github.io/feed.xml" }
     - { name: "Simon Willison", url: "https://simonwillison.net/atom/everything/" }
+    - { name: "Chip Huyen", url: "https://huyenchip.com/feed.xml" }
     - { name: "Eugene Yan", url: "https://eugeneyan.com/rss/" }
+    - { name: "Sebastian Ruder (NLP News)", url: "https://newsletter.ruder.io/feed" }
     - { name: "Jay Alammar", url: "https://jalammar.github.io/feed.xml" }
     - { name: "Nathan Lambert (Interconnects)", url: "https://www.interconnects.ai/feed" }
     - { name: "Jack Clark (Import AI)", url: "https://jack-clark.net/feed/" }
+    - { name: "Latent Space", url: "https://www.latent.space/feed" }
 
   news_and_newsletters:
     - { name: "MIT Technology Review — AI", url: "https://www.technologyreview.com/topic/artificial-intelligence/feed" }
@@ -45,9 +60,18 @@ rss_feeds:
     - { name: "Wired — AI", url: "https://www.wired.com/feed/tag/ai/latest/rss" }
     - { name: "The Gradient", url: "https://thegradient.pub/rss/" }
     - { name: "DeepLearning.AI (The Batch)", url: "https://www.deeplearning.ai/the-batch/rss.xml" }
+    - { name: "MarkTechPost", url: "https://www.marktechpost.com/feed/" }
 
-# Optional YouTube channel allowlist (channel handles or IDs). Empty = topic search across YouTube.
-youtube_channels: []
+# YouTube channels for the `youtube` source (handles, IDs, or URLs). The source pulls each
+# channel's recent videos AND does a topic search; channel videos are kept when the title
+# matches the topic. Transcripts are used when available, else the title+description.
+youtube_channels:
+  - "@TwoMinutePapers"
+  - "@YannicKilcher"
+  - "@AICoffeeBreak"
+  - "@machinelearningstreettalk"
+  - "@sentdex"
+  - "@AndrejKarpathy"
 
 # Hacker News (Algolia Search API) defaults.
 hackernews:
