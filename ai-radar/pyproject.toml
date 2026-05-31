@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-radar"
+version = "0.1.0"
+description = "Multi-source AI intelligence aggregator: fetch, store, and summarize the latest AI news, research, blogs, and video transcripts."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    "yt-dlp>=2024.1.0",
+    "youtube-transcript-api>=0.6.2",
+    "feedparser>=6.0.0",
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+llm = ["anthropic>=0.40.0"]
+dev = ["pytest>=8.0", "pytest-mock>=3.12"]
+
+[project.scripts]
+ai-radar = "ai_radar.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+ai_radar = ["../config/feeds.yaml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

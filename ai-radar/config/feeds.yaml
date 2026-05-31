@@ -1,0 +1,55 @@
+# AI Radar — curated default sources. Editable: add/remove freely.
+# The RSS source validates each feed at runtime and skips any that are dead/unreachable,
+# so a stale URL here never breaks a run. URLs reflect best-known public feeds as of 2026-05.
+
+# arXiv categories searched by the `arxiv` source (combined with your --topic query).
+arxiv_categories:
+  - cs.AI   # Artificial Intelligence
+  - cs.LG   # Machine Learning
+  - cs.CL   # Computation and Language (NLP / LLMs)
+  - cs.CV   # Computer Vision
+  - cs.NE   # Neural and Evolutionary Computing
+  - cs.MA   # Multi-Agent Systems
+  - cs.SE   # Software Engineering
+  - stat.ML # Statistics — Machine Learning
+
+# RSS/Atom feeds for the `rss` source. Covers BOTH AI news AND key creator/lab blogs.
+# Grouped only for readability; the source flattens these.
+rss_feeds:
+  labs_and_creators:
+    - { name: "OpenAI", url: "https://openai.com/news/rss.xml" }
+    - { name: "Google DeepMind", url: "https://deepmind.google/blog/rss.xml" }
+    - { name: "Microsoft Research", url: "https://www.microsoft.com/en-us/research/feed/" }
+    - { name: "NVIDIA Blog", url: "https://blogs.nvidia.com/feed/" }
+    - { name: "Hugging Face Blog", url: "https://huggingface.co/blog/feed.xml" }
+    - { name: "BAIR (Berkeley AI Research)", url: "https://bair.berkeley.edu/blog/feed.xml" }
+    - { name: "EleutherAI", url: "https://blog.eleuther.ai/index.xml" }
+    - { name: "LangChain Blog", url: "https://blog.langchain.dev/rss/" }
+    - { name: "MIT News — AI", url: "https://news.mit.edu/topic/mitartificial-intelligence2-rss.xml" }
+
+  individuals:
+    - { name: "Sebastian Raschka (Ahead of AI)", url: "https://magazine.sebastianraschka.com/feed" }
+    - { name: "Lilian Weng (Lil'Log)", url: "https://lilianweng.github.io/index.xml" }
+    - { name: "Simon Willison", url: "https://simonwillison.net/atom/everything/" }
+    - { name: "Eugene Yan", url: "https://eugeneyan.com/rss/" }
+    - { name: "Jay Alammar", url: "https://jalammar.github.io/feed.xml" }
+    - { name: "Nathan Lambert (Interconnects)", url: "https://www.interconnects.ai/feed" }
+    - { name: "Jack Clark (Import AI)", url: "https://jack-clark.net/feed/" }
+
+  news_and_newsletters:
+    - { name: "MIT Technology Review — AI", url: "https://www.technologyreview.com/topic/artificial-intelligence/feed" }
+    - { name: "TechCrunch — AI", url: "https://techcrunch.com/category/artificial-intelligence/feed/" }
+    - { name: "The Verge — AI", url: "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml" }
+    - { name: "VentureBeat — AI", url: "https://venturebeat.com/category/ai/feed/" }
+    - { name: "Ars Technica — AI", url: "https://arstechnica.com/ai/feed/" }
+    - { name: "Wired — AI", url: "https://www.wired.com/feed/tag/ai/latest/rss" }
+    - { name: "The Gradient", url: "https://thegradient.pub/rss/" }
+    - { name: "DeepLearning.AI (The Batch)", url: "https://www.deeplearning.ai/the-batch/rss.xml" }
+
+# Optional YouTube channel allowlist (channel handles or IDs). Empty = topic search across YouTube.
+youtube_channels: []
+
+# Hacker News (Algolia Search API) defaults.
+hackernews:
+  tags: story
+  points_min: 0
