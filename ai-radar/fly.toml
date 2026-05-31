@@ -24,6 +24,14 @@ primary_region = "iad"
   SCHEDULE_MODE = "loop"
   INTERVAL_SECONDS = "86400"   # daily
   DIGEST_SUBDIR = "ai-radar/digests"
+  # One-time historical backfill of all topics on first boot (marker kept on the volume).
+  BACKFILL_MONTHS = "6"
+  # Set credentials as secrets (NOT here):
+  #   fly secrets set ANTHROPIC_API_KEY=... GITHUB_TOKEN=... GIT_REPO_URL=github.com/cdblake1/cc-plugins.git
+  # One-time historical backfill of all topics on first boot (marker on the volume).
+  BACKFILL_MONTHS = "6"
+  # Set these as secrets, not here:
+  #   fly secrets set ANTHROPIC_API_KEY=... GITHUB_TOKEN=... GIT_REPO_URL=github.com/cdblake1/cc-plugins.git
 
 [[vm]]
   size = "shared-cpu-1x"
