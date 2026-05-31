@@ -17,10 +17,20 @@ _PKG_ROOT = Path(__file__).resolve().parent
 # config/feeds.yaml sits next to the project (src/ai_radar/../../config) in the repo,
 # and is also shipped as package data; try both.
 def _config_candidates(name: str) -> list[Path]:
-    return [
-        _PKG_ROOT.parent.parent / "config" / name,  # repo / editable install
-        _PKG_ROOT / "config" / name,                # packaged copy fallback
-    ]
+    """Where to look for a config file, most-specific first.
+
+    Includes the working directory and an env override so the configs resolve when the
+    package is pip-installed (non-editable) — e.g. in CI, where cwd is the repo's
+    ai-radar/ dir but the package itself lives in site-packages.
+    """
+    cands: list[Path] = []
+    env_dir = os.environ.get("AI_RADAR_CONFIG_DIR")
+    if env_dir:
+        cands.append(Path(env_dir).expanduser() / name)
+    cands.append(Path.cwd() / "config" / name)          # run from the ai-radar/ dir
+    cands.append(_PKG_ROOT.parent.parent / "config" / name)  # repo / editable install
+    cands.append(_PKG_ROOT / "config" / name)           # packaged copy fallback
+    return cands
 
 
 def feeds_path() -> Path:

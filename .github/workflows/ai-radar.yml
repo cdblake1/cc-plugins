@@ -148,6 +148,15 @@ jobs:
             echo "no changes to commit"
           fi
 
+      # Auto-enable Pages (build_type: workflow) so the deploy step works without a
+      # manual Settings → Pages toggle. Tolerant: if it can't enable, the run still
+      # succeeds and the site is available as the artifact below.
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+        continue-on-error: true
+        with:
+          enablement: true
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
@@ -156,6 +165,9 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    # Don't red-X the whole run if Pages isn't enabled yet — the fetch/wiki/site/commit
+    # already succeeded and the site is downloadable as an artifact.
+    continue-on-error: true
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
