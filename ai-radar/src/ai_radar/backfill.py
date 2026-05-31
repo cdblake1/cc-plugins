@@ -72,3 +72,18 @@ def backfill(
         if pause_seconds and i < len(windows) - 1:
             time.sleep(pause_seconds)
     return totals
+
+
+def backfill_many(store: Store, topics: list[str], *, log=lambda *a: None, **opts) -> dict:
+    """Backfill several topics in turn, accumulating totals.
+
+    `opts` are forwarded to backfill() (months, window, sources, channel, max_per_window,
+    pause_seconds, today, get_source).
+    """
+    totals = {"topics": 0, "windows": 0, "inserted": 0, "duplicate": 0, "skipped": 0}
+    for topic in topics:
+        t = backfill(store, topic, log=log, **opts)
+        totals["topics"] += 1
+        for k in ("windows", "inserted", "duplicate", "skipped"):
+            totals[k] += t[k]
+    return totals

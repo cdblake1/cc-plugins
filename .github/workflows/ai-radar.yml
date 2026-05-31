@@ -23,7 +23,7 @@ on:
         options: [digest, fetch, backfill]
         default: digest
       topic:
-        description: "Topic (required for fetch & backfill; blank digest = all topics)"
+        description: "Topic (required for fetch; backfill/digest blank = all topics in topics.yaml)"
         required: false
         default: ""
       months:
@@ -104,10 +104,14 @@ jobs:
           mkdir -p "$(dirname "$AI_RADAR_DB")"
           case "$TASK" in
             backfill)
-              if [ -z "$TOPIC" ]; then echo "::error::backfill requires a topic"; exit 1; fi
-              args=(backfill "$TOPIC" --months "$MONTHS" --window "$WINDOW" --sources "$SOURCES" --max "$MAXR")
-              [ -n "$CHANNEL" ] && args+=(--channel "$CHANNEL")
-              ai-radar "${args[@]}"
+              # Blank topic → backfill every topic in config/topics.yaml.
+              flags=(--months "$MONTHS" --window "$WINDOW" --sources "$SOURCES" --max "$MAXR")
+              [ -n "$CHANNEL" ] && flags+=(--channel "$CHANNEL")
+              if [ -n "$TOPIC" ]; then
+                ai-radar backfill "$TOPIC" "${flags[@]}"
+              else
+                ai-radar backfill "${flags[@]}"
+              fi
               ;;
             fetch)
               if [ -z "$TOPIC" ]; then echo "::error::fetch requires a topic"; exit 1; fi

@@ -98,7 +98,11 @@ and resumable thanks to the `UNIQUE(source, external_id)` constraint:
 ```bash
 ai-radar backfill "agentic coding" --months 3 --window weekly
 ai-radar backfill "ai engineering" --months 6 --channel @somechannel   # YouTube back-catalog
+ai-radar backfill --months 3 --sources arxiv,hackernews                # omit topic = all topics.yaml
 ```
+
+Omit the topic to backfill **every topic in `config/topics.yaml`** (the same list the
+digest uses).
 
 Per-source reality: **arXiv** and **Hacker News** have full date-ranged history;
 **YouTube** backfills well per `--channel`; **RSS** feeds only serve recent entries (no
