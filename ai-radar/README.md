@@ -71,6 +71,24 @@ related topics (computed for free from shared salient terms via the FTS index):
 ai-radar wiki --out-dir wiki        # writes wiki/index.md + wiki/<topic>.md
 ```
 
+Or generate a **self-contained static site** — one portable `index.html` (data embedded
+inline, no build step, no external JS/CSS) with browse-by-topic, summaries, cross-links,
+and a weighted client-side search box:
+
+```bash
+ai-radar site --out-dir _site       # open _site/index.html in any browser
+```
+
+### Browse on GitHub Pages (real data, zero local setup)
+
+The workflow at `.github/workflows/ai-radar.yml` runs on GitHub's runners (open network,
+so it fetches **real** sources), builds the digest + wiki + site, commits the markdown
+back, and deploys the site to GitHub Pages. Trigger it from the **Actions tab → AI Radar →
+Run workflow** (or wait for the daily schedule). To serve it, enable **Settings → Pages →
+Source: GitHub Actions**. Even without Pages enabled, each run uploads the site as a
+downloadable artifact. Add an `ANTHROPIC_API_KEY` repo secret for Claude summaries
+(otherwise free extractive summaries are used).
+
 ## Backfill (historical, windowed)
 
 To populate history, backfill iterates date windows oldest→newest (one big `--since` pull

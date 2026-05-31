@@ -1,0 +1,120 @@
+# AI Radar: fetch real sources → digest + wiki + static site → GitHub Pages.
+#
+# Runs on GitHub-hosted runners (open network), so this produces REAL data — unlike a
+# locked-down sandbox. Trigger it manually from the Actions tab (Run workflow) to see
+# output immediately, or let the daily schedule run it.
+#
+# To serve the site at https://<owner>.github.io/<repo>/:
+#   Repo Settings → Pages → Build and deployment → Source: "GitHub Actions".
+# Optional: add an ANTHROPIC_API_KEY repo secret to get Claude summaries (else free
+# extractive summaries are used automatically).
+#
+# Even without Pages enabled, the built site is uploaded as a downloadable artifact,
+# and the digest + wiki markdown are committed back to the repo.
+
+name: AI Radar
+
+on:
+  workflow_dispatch:
+    inputs:
+      topic:
+        description: "Single topic to fetch (blank = all topics in config/topics.yaml)"
+        required: false
+        default: ""
+      since:
+        description: "ISO date lower bound (blank = topics.yaml window)"
+        required: false
+        default: ""
+      max:
+        description: "Max results per source"
+        required: false
+        default: "8"
+  schedule:
+    - cron: "17 13 * * *"   # daily ~13:17 UTC
+
+permissions:
+  contents: write   # commit digest/wiki back
+  pages: write      # deploy Pages
+  id-token: write   # Pages deploy auth
+
+concurrency:
+  group: ai-radar
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ai-radar
+    env:
+      AI_RADAR_DB: ${{ github.workspace }}/.cache/ai-radar/store.db
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install ai-radar
+        run: pip install ".[llm]"
+
+      # Persist the SQLite store across runs so history accumulates.
+      - name: Restore store
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ github.workspace }}/.cache/ai-radar
+          key: ai-radar-db-${{ github.run_id }}
+          restore-keys: ai-radar-db-
+
+      - name: Fetch
+        run: |
+          mkdir -p "$(dirname "$AI_RADAR_DB")"
+          if [ -n "${{ github.event.inputs.topic }}" ]; then
+            ai-radar fetch "${{ github.event.inputs.topic }}" \
+              --max "${{ github.event.inputs.max || '8' }}" \
+              ${{ github.event.inputs.since && format('--since {0}', github.event.inputs.since) || '' }}
+          else
+            ai-radar digest --out-dir digests
+          fi
+
+      - name: Build wiki + site
+        run: |
+          ai-radar wiki --out-dir wiki
+          ai-radar site --out-dir "${{ github.workspace }}/_site" --title "AI Radar"
+
+      - name: Save store
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: ${{ github.workspace }}/.cache/ai-radar
+          key: ai-radar-db-${{ github.run_id }}
+
+      - name: Commit digest + wiki
+        run: |
+          git config user.name  "ai-radar-bot"
+          git config user.email "ai-radar-bot@users.noreply.github.com"
+          git add digests wiki || true
+          if ! git diff --cached --quiet; then
+            git commit -m "ai-radar: refresh digest + wiki [skip ci]"
+            git push
+          else
+            echo "no changes to commit"
+          fi
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v4

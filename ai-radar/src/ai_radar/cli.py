@@ -289,6 +289,17 @@ def cmd_wiki(args) -> int:
     return 0
 
 
+def cmd_site(args) -> int:
+    from .site import build_site
+
+    store = _open_store(args)
+    result = build_site(store, args.out_dir, title=args.title)
+    print(f"Wrote site: {result['index']} ({result['topics']} topics, "
+          f"{result['documents']} sources)")
+    store.close()
+    return 0
+
+
 def cmd_digest(args) -> int:
     from .digest import run_digest
 
@@ -421,6 +432,11 @@ def build_parser() -> argparse.ArgumentParser:
     w = sub.add_parser("wiki", help="generate a cross-linked markdown wiki from stored docs")
     w.add_argument("--out-dir", default="wiki", help="directory for the wiki markdown")
     w.set_defaults(func=cmd_wiki)
+
+    st = sub.add_parser("site", help="generate a self-contained static HTML site (for Pages)")
+    st.add_argument("--out-dir", default="_site", help="directory for the site")
+    st.add_argument("--title", default="AI Radar")
+    st.set_defaults(func=cmd_site)
 
     d = sub.add_parser("digest", help="fetch all configured topics and write a markdown digest")
     d.add_argument("--out-dir", default="digests", help="directory for the digest markdown")
