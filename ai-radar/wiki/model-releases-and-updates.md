@@ -2,6 +2,14 @@
 
 [← index](index.md)
 
+## Summary (extractive)
+
+- GPT-5.5 Instant Update; ChatGPT Canvas Discontinued; o3 and GPT 4.5 Retiring
+
+Link: https://help.openai.com/en/articles/9624314-model-release-notes?hn_dupe_filter
+
+Discussion: https://news.ycombinator.com/item?id=48317948
+
 ## Related topics
 
 - [agentic coding](agentic-coding.md) — 12 shared term(s)

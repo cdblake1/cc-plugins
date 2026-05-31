@@ -2,6 +2,31 @@
 
 [← index](index.md)
 
+## Summary (extractive)
+
+- Discussion: https://news.ycombinator.com/item?id=48342441
+- Discussion: https://news.ycombinator.com/item?id=48345691
+- (I am from JavaScript background)
+
+Link: https://github.com/ppnpm/clinlang
+
+Discussion: https://news.ycombinator.com/item?id=48333114
+- Here are my 5 mistakes
+
+I spent the past year building a unified memory layer for my AI agents using knowledge graphs and ontologies on top of MongoDB.
+- This stops &quot;Apple&quot; the company from merging with &quot;Apple&quot; the fruit.
+- 3 ways to model your ontologies for GraphRAG → https:&#x2F;&#x2F;www.linkedin.com&#x2F;feed&#x2F;update&#x2F;urn:li:share:7446856909179027456 2.
+- → https:&#x2F;&#x2F;www.linkedin.com&#x2F;feed&#x2F;update&#x2F;urn:li:share:7449362677560221696 3.
+- A year building GraphRAG from scratch → https:&#x2F;&#x2F;www.linkedin.com&#x2F;feed&#x2F;update&#x2F;urn:li:share:7449366886603128833 4.
+- The third memory type: reasoning memory → https:&#x2F;&#x2F;www.linkedin.com&#x2F;feed&#x2F;update&#x2F;urn:li:share:7454454641939034113 5.
+- Building a production-grade personal AI assistant → https:&#x2F;&#x2F;www.linkedin.com&#x2F;feed&#x2F;update&#x2F;urn:li:share:7456973563858821120 6.
+- Designing Your Agents&#x27; Unified Memory → https:&#x2F;&#x2F;www.linkedin.com&#x2F;feed&#x2F;update&#x2F;urn:li:share:7464580605327060992
+
+Discussion: https://news.ycombinator.com/item?id=48337689
+- Link: https://github.com/scanaislop/aislop
+
+Discussion: https://news.ycombinator.com/item?id=48322956
+
 ## Related topics
 
 - [AI engineering and infrastructure](ai-engineering-and-infrastructure.md) — 15 shared term(s)
@@ -10,8 +35,10 @@
 - [LLM evaluation and benchmarks](llm-evaluation-and-benchmarks.md) — 13 shared term(s)
 - [model releases and updates](model-releases-and-updates.md) — 11 shared term(s)
 
-## Sources (91)
+## Sources (93)
 
+- [Ask HN: What are your worst war stories bringing agentic applications into prod](https://news.ycombinator.com/item?id=48342441) — hackernews · yaoke259 · 2026-05-31
+- [Ask HN: Corporate Disconnect Between "Tokenmaxxing" and Token Optimization](https://news.ycombinator.com/item?id=48345691) — hackernews · mc-0 · 2026-05-31
 - [Show HN: Clinglang – A shorthand language for doctors to write structured cases](https://github.com/ppnpm/clinlang) — hackernews · ppnpm · 2026-05-30
 - [I spent a year building agent memory on knowledge graphs. Here are my 5 mistakes](https://news.ycombinator.com/item?id=48337689) — hackernews · pauliusztin · 2026-05-30
 - [Show HN: AISlop, a CLI for catching AI generated code smells](https://github.com/scanaislop/aislop) — hackernews · Heavykenny · 2026-05-29
@@ -108,6 +135,6 @@
 
 - [Show HN: Lmcli v0.5.0 – A useable tool for LLM minimalists](https://codeberg.org/mlow/lmcli) — *agentic coding* · hackernews
 - [Give every tool LLM wiki and bypass Claude Code SSH Throttle](https://news.ycombinator.com/item?id=48169701) — *agentic coding* · hackernews
-- [Show HN: Context-drop – CLI tool to to share files/images between remote agents](https://github.com/mupt-ai/context-drop) — *agentic coding* · hackernews
 - [ReasonSTL: Bridging Natural Language and Signal Temporal Logic via Tool-Augmented Process-Rewarded Learning](https://arxiv.org/abs/2605.06483v2) — *open source language models* · arxiv
 - [Show HN: RAG Doctor – CLI tool to diagnose broken RAG pipelines](https://ragdoctor.dev/) — *retrieval augmented generation* · hackernews
+- [Show HN: Context-drop – CLI tool to to share files/images between remote agents](https://github.com/mupt-ai/context-drop) — *agentic coding* · hackernews

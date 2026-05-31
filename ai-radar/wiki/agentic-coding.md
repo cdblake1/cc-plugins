@@ -2,6 +2,62 @@
 
 [← index](index.md)
 
+## Summary (extractive)
+
+- Show HN: Komi-learn – continuous memory and self-improvement for coding agents
+
+Link: https://github.com/kurikomi-labs/komi-learn
+
+Discussion: https://news.ycombinator.com/item?id=48343216
+- The ambiguous intelligence of coding agents
+
+Link: https://blog.viewfromtheweb.com/the-ambiguous-intelligence-of-coding-agents-9a2d96f5/
+
+Discussion: https://news.ycombinator.com/item?id=48344419
+- Link: https://github.com/octelium/cordium
+
+Discussion: https://news.ycombinator.com/item?id=48344623
+- A zot extension that makes answering your coding agent's questions painless
+
+Link: https://github.com/patriceckhart/zot-answer
+
+Discussion: https://news.ycombinator.com/item?id=48345160
+- AI coding agents ships at the cost of intuition and taste
+
+Link: https://shivekkhurana.com/blog/coding-agent-dopamine/
+
+Discussion: https://news.ycombinator.com/item?id=48334363
+- https:&#x2F;&#x2F;github.com&#x2F;voicetreelab&#x2F;voicetree https:&#x2F;&#x2F;github.com&#x2F;AgentOrchestrator&#x2F;AgentBase https:&#x2F;&#x2F;github.com&#x2F;0-AI-UG&#x2F;cate did anyone else notice something like it or try them out?
+- Take care,
+Antoine
+
+Link: https://jynx.app/
+
+Discussion: https://news.ycombinator.com/item?id=48336119
+- The Coding Harness Behind GitHub Copilot in VS Code
+
+Link: https://code.visualstudio.com/blogs/2026/05/15/agent-harnesses-github-copilot-vscode
+
+Discussion: https://news.ycombinator.com/item?id=48337580
+- 6 Months of "Agentic" Coding
+
+Link: https://ashutoshbsathe.github.io/blog/agentic-coding/
+
+Discussion: https://news.ycombinator.com/item?id=48337701
+- Zerostack v1.3.4 released – Lightweight Unix-like coding agent
+
+Link: https://github.com/gi-dellav/zerostack/releases/tag/v1.3.4
+
+Discussion: https://news.ycombinator.com/item?id=48340224
+- Zerostack v1.3.4 released – Lightweight Unix-inspired coding agent
+
+Link: https://crates.io/crates/zerostack/1.3.4
+
+Discussion: https://news.ycombinator.com/item?id=48340468
+- Link: https://github.com/thaw-ai/thaw
+
+Discussion: https://news.ycombinator.com/item?id=48341069
+
 ## Related topics
 
 - [LLM evaluation and benchmarks](llm-evaluation-and-benchmarks.md) — 15 shared term(s)
@@ -10,8 +66,13 @@
 - [AI engineering and infrastructure](ai-engineering-and-infrastructure.md) — 12 shared term(s)
 - [model releases and updates](model-releases-and-updates.md) — 12 shared term(s)
 
-## Sources (180)
+## Sources (185)
 
+- [Show HN: Komi-learn – continuous memory and self-improvement for coding agents](https://github.com/kurikomi-labs/komi-learn) — hackernews · rainxchzed · 2026-05-31
+- [The ambiguous intelligence of coding agents](https://blog.viewfromtheweb.com/the-ambiguous-intelligence-of-coding-agents-9a2d96f5/) — hackernews · rickdg · 2026-05-31
+- [Show HN: Agent Deck: Native Mac app for managing AI coding agents| powered by PI](https://agentdeck.site/) — hackernews · streetcoder · 2026-05-31
+- [Show HN: Cordium: FOSS sandbox platform that eliminates credential injection](https://github.com/octelium/cordium) — hackernews · geoctl · 2026-05-31
+- [A zot extension that makes answering your coding agent's questions painless](https://github.com/patriceckhart/zot-answer) — hackernews · patriceckhart · 2026-05-31
 - [AI coding agents ships at the cost of intuition and taste](https://shivekkhurana.com/blog/coding-agent-dopamine/) — hackernews · shivekkhurana · 2026-05-30
 - [Spatial IDE's for agentic coding workflows](https://news.ycombinator.com/item?id=48336009) — hackernews · Imbiss · 2026-05-30
 - [Show HN: Jynx, a matchmaking app to find gaming teammates](https://jynx.app/) — hackernews · akiro____ · 2026-05-30
