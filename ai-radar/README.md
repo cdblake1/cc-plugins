@@ -180,3 +180,33 @@ pytest                      # fully offline — network and the Anthropic SDK ar
 Layout: `sources/` (pluggable fetchers), `summarize/` (strategies; the Claude call is
 isolated in `summarize/claude.py`), `storage.py` (SQLite DAO), `cli.py` (orchestration),
 `net.py` (proxy/CA), `config/feeds.yaml` (curated sources).
+
+
+## Hosting on Fly.io (recommended for YouTube)
+
+GitHub Actions runners share heavily-used IP ranges that YouTube frequently blocks, so on
+Actions most videos fall back to title+description. **Fly.io gives the app a stable, dedicated
+IP**, so `youtube-transcript-api` / yt-dlp succeed far more often — you get real transcripts.
+The whole pipeline (fetch → summarize → digest → wiki → site) runs there on a daily loop with a
+persistent SQLite store, and commits results back to the repo.
+
+```bash
+cd ai-radar
+# edit fly.toml: set a unique app name (app = "...")
+fly launch --no-deploy --copy-config
+fly volumes create ai_radar_data --size 1            # persistent /data (store + repo clone)
+fly secrets set ANTHROPIC_API_KEY=sk-... \
+                GITHUB_TOKEN=ghp_... \
+                GIT_REPO_URL=github.com/cdblake1/cc-plugins.git
+fly deploy
+```
+
+`fly.toml` sets `BACKFILL_MONTHS=6`, so the **first boot runs a one-time 6-month backfill of
+all topics** (guarded by a marker on the volume), then a daily digest after that. Adjust the
+schedule with `INTERVAL_SECONDS`, or set `SCHEDULE_MODE=once` to drive it from an external cron
+/ Fly scheduled machine. Without `GIT_REPO_URL`/`GITHUB_TOKEN` it writes digest/wiki/site to the
+`/data` volume instead of pushing.
+
+If a specific video is still blocked, the title+description fallback keeps it in the digest; for
+maximum transcript yield you can later add cookies or a proxy to the yt-dlp options in
+`net.py`/`sources/youtube.py`.
