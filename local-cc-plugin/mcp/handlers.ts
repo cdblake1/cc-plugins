@@ -6,6 +6,7 @@
 
 import type { DatabaseSync } from "node:sqlite";
 import { now } from "../scripts/db.ts";
+import { formatBudget, liveContextTokens, type ContextUsage } from "../scripts/transcript.ts";
 
 export type StoreInput = { body: string; key?: string; tags?: string[] };
 export type RecallInput = {
@@ -20,6 +21,7 @@ export type RecallInput = {
 export type ForgetInput = { id?: number; key?: string; confirm?: "yes" };
 export type PinInput = { id: number; pinned?: boolean };
 export type JournalInput = { limit?: number };
+export type ContextBudgetInput = { window_tokens?: number };
 
 type NoteRow = {
   id: number;
@@ -183,6 +185,29 @@ export function handleJournal(
   if (rows.length === 0) return `No recorded edits for ${currentRepo} yet.`;
   const text = rows.map((r) => `${r.ts}  ${r.tool}  ${r.file_path ?? "(no path)"}`).join("\n");
   return `Recent edits for ${currentRepo}:\n${text}`;
+}
+
+/**
+ * PURE: format a context-budget report from the latest transcript usage (the server resolves the
+ * transcript and reads `usage`, passing it in — keeping fs IO out of the handler). Tiered advice
+ * nudges toward /checkpoint + /compact as occupancy climbs. `usage === null` means the transcript
+ * couldn't be read.
+ */
+export function handleContextBudget(usage: ContextUsage | null, windowTokens: number): string {
+  if (!usage) {
+    return (
+      "Couldn't read the current session transcript to measure context usage " +
+      "(no transcript found, or it has no token data yet)."
+    );
+  }
+  const b = formatBudget(liveContextTokens(usage), windowTokens);
+  const advice =
+    b.tier === "high"
+      ? "Context is nearly full — run /checkpoint to save a handoff, then /compact (or /clear)."
+      : b.tier === "warn"
+        ? "Context is getting large — consider /checkpoint then /compact at the next natural break."
+        : "Plenty of headroom.";
+  return `Context budget: ${b.label}. ${advice}`;
 }
 
 /** PURE-ish: fetch tag arrays for the given note ids, keyed by note id. */
