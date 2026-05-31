@@ -55,6 +55,27 @@ CREATE TABLE IF NOT EXISTS summaries (
 
 CREATE INDEX IF NOT EXISTS idx_documents_topic ON documents(topic);
 CREATE INDEX IF NOT EXISTS idx_documents_run   ON documents(run_id);
+
+-- Full-text index for weighted (BM25) search and "related" cross-referencing.
+-- External-content table mirrors documents; kept in sync by the triggers below.
+CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(
+  title, content, content='documents', content_rowid='id'
+);
+
+CREATE TRIGGER IF NOT EXISTS documents_ai AFTER INSERT ON documents BEGIN
+  INSERT INTO documents_fts(rowid, title, content)
+  VALUES (new.id, COALESCE(new.title, ''), new.content);
+END;
+CREATE TRIGGER IF NOT EXISTS documents_ad AFTER DELETE ON documents BEGIN
+  INSERT INTO documents_fts(documents_fts, rowid, title, content)
+  VALUES ('delete', old.id, COALESCE(old.title, ''), old.content);
+END;
+CREATE TRIGGER IF NOT EXISTS documents_au AFTER UPDATE ON documents BEGIN
+  INSERT INTO documents_fts(documents_fts, rowid, title, content)
+  VALUES ('delete', old.id, COALESCE(old.title, ''), old.content);
+  INSERT INTO documents_fts(rowid, title, content)
+  VALUES (new.id, COALESCE(new.title, ''), new.content);
+END;
 """
 
 
@@ -67,6 +88,15 @@ class Store:
         self.conn.execute("PRAGMA foreign_keys = ON")
         self.conn.executescript(SCHEMA)
         self.conn.commit()
+        self._sync_fts()
+
+    def _sync_fts(self) -> None:
+        """Populate the FTS index for rows that predate it (idempotent, self-correcting)."""
+        docs = self.conn.execute("SELECT count(*) FROM documents").fetchone()[0]
+        indexed = self.conn.execute("SELECT count(*) FROM documents_fts").fetchone()[0]
+        if docs != indexed:
+            self.conn.execute("INSERT INTO documents_fts(documents_fts) VALUES('rebuild')")
+            self.conn.commit()
 
     @classmethod
     def open(cls, path: str | Path) -> "Store":
@@ -151,6 +181,62 @@ class Store:
             sql += " LIMIT ?"
             args.append(limit)
         return [dict(r) for r in self.conn.execute(sql, args).fetchall()]
+
+    # --- search / cross-references ----------------------------------------
+
+    def search(self, query: str, *, limit: int = 20, topic: str | None = None) -> list[dict]:
+        """Weighted full-text search. Titles are weighted above body via bm25().
+
+        Returns document rows with a `score` (lower = more relevant), best first.
+        """
+        from .textutil import fts_match_query
+
+        match = fts_match_query(query)
+        if not match:
+            return []
+        sql = (
+            "SELECT d.*, bm25(documents_fts, 3.0, 1.0) AS score "
+            "FROM documents_fts f JOIN documents d ON d.id = f.rowid "
+            "WHERE documents_fts MATCH ?"
+        )
+        args: list[object] = [match]
+        if topic is not None:
+            sql += " AND d.topic = ?"
+            args.append(topic)
+        sql += " ORDER BY score LIMIT ?"
+        args.append(limit)
+        return [dict(r) for r in self.conn.execute(sql, args).fetchall()]
+
+    def related(self, doc_id: int, *, limit: int = 5, cross_topic_only: bool = False) -> list[dict]:
+        """Find documents related to a given one via shared salient terms (FTS 'more like this')."""
+        from .textutil import fts_match_query
+
+        row = self.conn.execute(
+            "SELECT title, content, topic FROM documents WHERE id = ?", (doc_id,)
+        ).fetchone()
+        if row is None:
+            return []
+        match = fts_match_query(f"{row['title'] or ''} {row['content']}")
+        if not match:
+            return []
+        sql = (
+            "SELECT d.*, bm25(documents_fts, 3.0, 1.0) AS score "
+            "FROM documents_fts f JOIN documents d ON d.id = f.rowid "
+            "WHERE documents_fts MATCH ? AND d.id != ?"
+        )
+        args: list[object] = [match, doc_id]
+        if cross_topic_only:
+            sql += " AND d.topic != ?"
+            args.append(row["topic"])
+        sql += " ORDER BY score LIMIT ?"
+        args.append(limit)
+        return [dict(r) for r in self.conn.execute(sql, args).fetchall()]
+
+    def distinct_topics(self) -> list[str]:
+        rows = self.conn.execute(
+            "SELECT topic, count(*) c FROM documents GROUP BY topic ORDER BY c DESC"
+        ).fetchall()
+        return [r["topic"] for r in rows]
 
     # --- summaries ---------------------------------------------------------
 

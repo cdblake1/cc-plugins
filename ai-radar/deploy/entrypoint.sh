@@ -32,6 +32,7 @@ run_once() {
     local out="$repo/${DIGEST_SUBDIR}"
     mkdir -p "$out"
     ai-radar digest --out-dir "$out"
+    ai-radar wiki --out-dir "$repo/${WIKI_SUBDIR:-ai-radar/wiki}"
     git -C "$repo" add -A
     if ! git -C "$repo" diff --cached --quiet; then
       git -C "$repo" -c user.name="$GIT_NAME" -c user.email="$GIT_EMAIL" \
@@ -45,7 +46,8 @@ run_once() {
     local out="${DIGEST_DIR:-/data/digests}"
     mkdir -p "$out"
     ai-radar digest --out-dir "$out"
-    echo "[ai-radar] digest written to $out (no GIT_REPO_URL/GITHUB_TOKEN → not pushed)"
+    ai-radar wiki --out-dir "${WIKI_DIR:-/data/wiki}"
+    echo "[ai-radar] digest + wiki written to $out (no GIT_REPO_URL/GITHUB_TOKEN → not pushed)"
   fi
   echo "[ai-radar] run finished $(date -u +%FT%TZ)"
 }

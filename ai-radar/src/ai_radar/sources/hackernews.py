@@ -36,6 +36,9 @@ class HackerNewsSource(Source):
         since_ts = _since_unix(params.since)
         if since_ts is not None:
             filters.append(f"created_at_i>{since_ts}")
+        until_ts = _since_unix(params.until)
+        if until_ts is not None:
+            filters.append(f"created_at_i<{until_ts}")
         points_min = int(self.config.get("points_min", 0) or 0)
         if points_min > 0:
             filters.append(f"points>={points_min}")

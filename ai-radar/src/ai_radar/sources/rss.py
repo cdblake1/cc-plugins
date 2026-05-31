@@ -50,6 +50,8 @@ class RssSource(Source):
                 published = _iso_date(entry)
                 if params.since and published and published < params.since:
                     continue
+                if params.until and published and published >= params.until:
+                    continue
                 text = _clean(_entry_text(entry))
                 title = (entry.get("title") or "").strip()
                 if topic and topic not in f"{title} {text}".lower():

@@ -43,6 +43,7 @@ def fetch_documents(
         params_json=json.dumps(
             {
                 "since": params.since,
+                "until": params.until,
                 "max_results": params.max_results,
                 "channel": params.channel,
                 "lang": params.lang,
@@ -240,6 +241,54 @@ def cmd_export(args) -> int:
     return 0
 
 
+def cmd_search(args) -> int:
+    store = _open_store(args)
+    rows = store.search(args.query, limit=args.limit, topic=args.topic)
+    if args.json:
+        print(json.dumps(rows, indent=2, default=str))
+    elif not rows:
+        print("(no matches)")
+    else:
+        for r in rows:
+            date = r.get("publish_date") or (r.get("fetched_at") or "")[:10]
+            print(f"[{r['score']:+.2f}] [{r['source']:<10}] {date}  {r.get('title') or r['url']}")
+            print(f"             {r['url']}  (topic: {r['topic']})")
+    store.close()
+    return 0
+
+
+def cmd_backfill(args) -> int:
+    from .backfill import backfill
+
+    store = _open_store(args)
+    try:
+        registry.resolve_sources(args.sources)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    totals = backfill(
+        store, args.topic, months=args.months, window=args.window, sources=args.sources,
+        channel=args.channel, max_per_window=args.max, pause_seconds=args.pause,
+        log=lambda m: print(m),
+    )
+    print(
+        f"Backfill done: {totals['inserted']} new, {totals['duplicate']} duplicate, "
+        f"{totals['skipped']} skipped across {totals['windows']} window(s)."
+    )
+    store.close()
+    return 0
+
+
+def cmd_wiki(args) -> int:
+    from .wiki import build_wiki
+
+    store = _open_store(args)
+    result = build_wiki(store, args.out_dir)
+    print(f"Wrote wiki: {result['index']} + {len(result['pages'])} topic page(s)")
+    store.close()
+    return 0
+
+
 def cmd_digest(args) -> int:
     from .digest import run_digest
 
@@ -350,6 +399,28 @@ def build_parser() -> argparse.ArgumentParser:
     e.add_argument("--format", default="md", choices=["md", "json", "txt"])
     e.add_argument("--out", default="-", help="output path, or - for stdout")
     e.set_defaults(func=cmd_export)
+
+    sr = sub.add_parser("search", help="weighted full-text search over stored documents")
+    sr.add_argument("query")
+    sr.add_argument("--topic", help="restrict to one topic")
+    sr.add_argument("--limit", type=int, default=20)
+    sr.add_argument("--json", action="store_true")
+    sr.set_defaults(func=cmd_search)
+
+    b = sub.add_parser("backfill", help="windowed historical backfill of a topic")
+    b.add_argument("topic")
+    b.add_argument("--months", type=int, default=3, help="how far back to go")
+    b.add_argument("--window", default="weekly", choices=["weekly", "monthly"])
+    b.add_argument("--sources", default="all",
+                   help="all or comma list (RSS contributes only live entries)")
+    b.add_argument("--channel", help="YouTube channel to backfill (handle/URL/id)")
+    b.add_argument("--max", type=int, default=20, help="max results per window per source")
+    b.add_argument("--pause", type=float, default=1.0, help="seconds to pause between windows")
+    b.set_defaults(func=cmd_backfill)
+
+    w = sub.add_parser("wiki", help="generate a cross-linked markdown wiki from stored docs")
+    w.add_argument("--out-dir", default="wiki", help="directory for the wiki markdown")
+    w.set_defaults(func=cmd_wiki)
 
     d = sub.add_parser("digest", help="fetch all configured topics and write a markdown digest")
     d.add_argument("--out-dir", default="digests", help="directory for the digest markdown")

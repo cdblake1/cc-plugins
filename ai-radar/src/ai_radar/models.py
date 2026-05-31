@@ -15,6 +15,7 @@ class FetchParams:
 
     topic: str
     since: str | None = None          # ISO date lower bound, e.g. "2026-05-01"
+    until: str | None = None          # ISO date upper bound (exclusive), for windowed backfill
     max_results: int = 10             # per-source cap
     channel: str | None = None        # source-specific filter (channel/feed/author)
     lang: str | None = None           # preferred content language (e.g. "en")

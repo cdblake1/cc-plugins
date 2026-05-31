@@ -53,6 +53,70 @@ ai-radar export "agentic coding" --format md --out digest.md
 to summarize right after fetching. The store defaults to
 `~/.local/share/ai-radar/store.db` (override with `--db` or `AI_RADAR_DB`).
 
+## Search & wiki
+
+Stored documents are indexed with SQLite **FTS5**, so search is BM25-weighted (titles
+weighted above body):
+
+```bash
+ai-radar search "autonomous tool use"          # ranked hits with source links
+ai-radar search "evaluation" --topic "llm eval" --json
+```
+
+Generate a **cross-linked markdown wiki** from everything stored — an index plus one page
+per topic with the latest summary, linked source references, and cross-references to
+related topics (computed for free from shared salient terms via the FTS index):
+
+```bash
+ai-radar wiki --out-dir wiki        # writes wiki/index.md + wiki/<topic>.md
+```
+
+## Backfill (historical, windowed)
+
+To populate history, backfill iterates date windows oldest→newest (one big `--since` pull
+doesn't work — sources cap results and only return the most recent matches). Re-runnable
+and resumable thanks to the `UNIQUE(source, external_id)` constraint:
+
+```bash
+ai-radar backfill "agentic coding" --months 3 --window weekly
+ai-radar backfill "ai engineering" --months 6 --channel @somechannel   # YouTube back-catalog
+```
+
+Per-source reality: **arXiv** and **Hacker News** have full date-ranged history;
+**YouTube** backfills well per `--channel`; **RSS** feeds only serve recent entries (no
+historical archive), so they contribute little to a backfill — that's expected.
+
+## Scheduled daily digest + hosting (Fly.io)
+
+`ai-radar digest` fetches every topic in `config/topics.yaml`, summarizes each, and writes
+a dated markdown digest (with a table of contents and per-topic source references). The
+Claude summarizer is used when `ANTHROPIC_API_KEY` is set, with a per-topic cost ceiling
+(`summarize.max_cost_usd`) and automatic fallback to free extractive summarization.
+
+```bash
+ai-radar digest --out-dir digests        # writes digests/YYYY-MM-DD.md + digests/latest.md
+```
+
+To run it daily on Fly.io with a **persistent SQLite store** and the digest + wiki
+**committed back to this repo**:
+
+```bash
+cd ai-radar
+# edit fly.toml: set a unique app name
+fly launch --no-deploy --copy-config
+fly volumes create ai_radar_data --size 1                 # persistent /data volume
+fly secrets set ANTHROPIC_API_KEY=sk-... \
+                GITHUB_TOKEN=ghp_... \
+                GIT_REPO_URL=github.com/cdblake1/cc-plugins.git
+fly deploy
+```
+
+The container (`deploy/Dockerfile` + `deploy/entrypoint.sh`) self-schedules a daily run
+(`SCHEDULE_MODE=loop`, `INTERVAL_SECONDS=86400`), keeps `store.db` on the `/data` volume,
+and — when `GIT_REPO_URL` + `GITHUB_TOKEN` are set — commits the regenerated digest and
+wiki back to the repo. Set `SCHEDULE_MODE=once` to use a Fly scheduled machine or external
+cron instead. The same Dockerfile runs on any VPS/Docker host.
+
 ## Cost-aware Claude summarization (opt-in)
 
 Two summarize modes are always free: **extractive** (local key-sentence extraction) and

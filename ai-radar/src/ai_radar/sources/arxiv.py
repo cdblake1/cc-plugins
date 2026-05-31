@@ -35,6 +35,10 @@ class ArxivSource(Source):
             search = f"({cat_clause}) AND {topic_clause}"
         else:
             search = topic_clause or cat_clause or "all:artificial intelligence"
+        # Date-bound the query for windowed backfill (arXiv supports submittedDate ranges).
+        date_clause = _submitted_date_clause(params.since, params.until)
+        if date_clause:
+            search = f"({search}) AND {date_clause}"
         q = {
             "search_query": search,
             "start": "0",
@@ -55,6 +59,8 @@ class ArxivSource(Source):
         for entry in parsed.entries:
             published = _iso_date(entry)
             if params.since and published and published < params.since:
+                continue
+            if params.until and published and published >= params.until:
                 continue
             arxiv_id = _arxiv_id(entry.get("id", ""))
             authors = ", ".join(a.get("name", "") for a in entry.get("authors", [])) or None
@@ -81,6 +87,15 @@ class ArxivSource(Source):
             raise ContentUnavailable(f"no abstract for {item.external_id}")
         header = item.title or item.external_id
         return f"{header}\n\n{abstract}", "en"
+
+
+def _submitted_date_clause(since: str | None, until: str | None) -> str:
+    """arXiv submittedDate range, e.g. submittedDate:[202601010000 TO 202602012359]."""
+    if not since and not until:
+        return ""
+    lo = (since or "1900-01-01").replace("-", "")[:8] + "0000"
+    hi = (until or "2999-12-31").replace("-", "")[:8] + "2359"
+    return f"submittedDate:[{lo} TO {hi}]"
 
 
 def _arxiv_id(entry_id: str) -> str:

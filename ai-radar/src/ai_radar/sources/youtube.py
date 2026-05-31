@@ -57,6 +57,8 @@ class YouTubeSource(Source):
             publish_date = _iso_from_yt(entry.get("upload_date"))
             if params.since and publish_date and publish_date < params.since:
                 continue
+            if params.until and publish_date and publish_date >= params.until:
+                continue
             items.append(
                 SourceItem(
                     source=self.name,
