@@ -240,6 +240,20 @@ def cmd_export(args) -> int:
     return 0
 
 
+def cmd_digest(args) -> int:
+    from .digest import run_digest
+
+    store = _open_store(args)
+    print(f"Building digest → {args.out_dir}")
+    result = run_digest(store, out_dir=args.out_dir, date=args.date, log=lambda m: print(m))
+    print(
+        f"Wrote {result['path']} ({len(result['topics'])} topics, "
+        f"est. cost ${result['total_cost']:.4f})"
+    )
+    store.close()
+    return 0
+
+
 def cmd_sources(args) -> int:
     feeds = config.load_feeds()
     print(f"DB: {args.db or config.db_path()}")
@@ -336,6 +350,11 @@ def build_parser() -> argparse.ArgumentParser:
     e.add_argument("--format", default="md", choices=["md", "json", "txt"])
     e.add_argument("--out", default="-", help="output path, or - for stdout")
     e.set_defaults(func=cmd_export)
+
+    d = sub.add_parser("digest", help="fetch all configured topics and write a markdown digest")
+    d.add_argument("--out-dir", default="digests", help="directory for the digest markdown")
+    d.add_argument("--date", help="digest date (YYYY-MM-DD); defaults to today")
+    d.set_defaults(func=cmd_digest)
 
     sub.add_parser("sources", help="show the curated source config in use").set_defaults(
         func=cmd_sources

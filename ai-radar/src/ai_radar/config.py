@@ -16,19 +16,49 @@ import yaml
 _PKG_ROOT = Path(__file__).resolve().parent
 # config/feeds.yaml sits next to the project (src/ai_radar/../../config) in the repo,
 # and is also shipped as package data; try both.
-_FEEDS_CANDIDATES = [
-    _PKG_ROOT.parent.parent / "config" / "feeds.yaml",  # repo / editable install
-    _PKG_ROOT / "config" / "feeds.yaml",                # packaged copy fallback
-]
+def _config_candidates(name: str) -> list[Path]:
+    return [
+        _PKG_ROOT.parent.parent / "config" / name,  # repo / editable install
+        _PKG_ROOT / "config" / name,                # packaged copy fallback
+    ]
 
 
 def feeds_path() -> Path:
     """Return the first existing feeds.yaml path (repo layout preferred)."""
-    for candidate in _FEEDS_CANDIDATES:
+    for candidate in _config_candidates("feeds.yaml"):
         if candidate.exists():
             return candidate
     # Default to the repo-layout path even if missing, so errors are legible.
-    return _FEEDS_CANDIDATES[0]
+    return _config_candidates("feeds.yaml")[0]
+
+
+def topics_path() -> Path:
+    """Return the first existing topics.yaml path (repo layout preferred)."""
+    for candidate in _config_candidates("topics.yaml"):
+        if candidate.exists():
+            return candidate
+    return _config_candidates("topics.yaml")[0]
+
+
+def load_topics(path: Path | None = None) -> dict:
+    """Load topics.yaml for the scheduled digest, with sensible defaults."""
+    p = path or topics_path()
+    raw: dict = {}
+    if p.exists():
+        with open(p, "r", encoding="utf-8") as fh:
+            raw = yaml.safe_load(fh) or {}
+    summarize = dict(raw.get("summarize", {}) or {})
+    return {
+        "topics": list(raw.get("topics", []) or []),
+        "since_days": int(raw.get("since_days", 2) or 2),
+        "max_per_source": int(raw.get("max_per_source", 5) or 5),
+        "sources": raw.get("sources", "all") or "all",
+        "summarize": {
+            "mode": summarize.get("mode", "extractive"),
+            "model": summarize.get("model", DEFAULT_MODEL),
+            "max_cost_usd": float(summarize.get("max_cost_usd", 0.50) or 0.50),
+        },
+    }
 
 
 def db_path() -> Path:

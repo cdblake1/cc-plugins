@@ -1,0 +1,27 @@
+# Topics the scheduled digest tracks each run. Edit freely.
+topics:
+  - "agentic coding"
+  - "LLM evaluation and benchmarks"
+  - "AI agents and tool use"
+  - "retrieval augmented generation"
+  - "model releases and updates"
+  - "AI engineering and infrastructure"
+  - "reasoning and chain of thought"
+  - "open source language models"
+
+# Rolling window for each run (days back from today).
+since_days: 2
+
+# Per-source result cap per topic.
+max_per_source: 5
+
+# Which sources to pull: "all" or a comma list (arxiv,rss,hackernews,youtube).
+sources: all
+
+summarize:
+  # claude | extractive | emit. claude needs ANTHROPIC_API_KEY; falls back to
+  # extractive automatically if the key is missing or the per-topic estimate exceeds
+  # max_cost_usd below (a safety ceiling for the automated paid path).
+  mode: claude
+  model: claude-haiku-4-5
+  max_cost_usd: 0.50

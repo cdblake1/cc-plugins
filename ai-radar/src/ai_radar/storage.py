@@ -125,6 +125,7 @@ class Store:
         topic: str | None = None,
         source: str | None = None,
         run_id: int | None = None,
+        since: str | None = None,
         limit: int | None = None,
     ) -> list[dict]:
         sql = "SELECT * FROM documents"
@@ -139,6 +140,10 @@ class Store:
         if run_id is not None:
             clauses.append("run_id = ?")
             args.append(run_id)
+        if since is not None:
+            # Scope to a window using publish_date when known, else fetched_at.
+            clauses.append("COALESCE(publish_date, fetched_at) >= ?")
+            args.append(since)
         if clauses:
             sql += " WHERE " + " AND ".join(clauses)
         sql += " ORDER BY COALESCE(publish_date, fetched_at) DESC, id DESC"
