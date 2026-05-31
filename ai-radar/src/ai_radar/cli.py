@@ -258,7 +258,7 @@ def cmd_search(args) -> int:
 
 
 def cmd_backfill(args) -> int:
-    from .backfill import backfill
+    from .backfill import backfill_many
 
     store = _open_store(args)
     try:
@@ -266,14 +266,26 @@ def cmd_backfill(args) -> int:
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
-    totals = backfill(
-        store, args.topic, months=args.months, window=args.window, sources=args.sources,
+
+    # No topic given → backfill every topic in config/topics.yaml (like the digest).
+    if args.topic:
+        topics = [args.topic]
+    else:
+        topics = config.load_topics()["topics"]
+        if not topics:
+            print("error: no topic given and config/topics.yaml has none", file=sys.stderr)
+            return 2
+        print(f"No topic given → backfilling {len(topics)} configured topic(s).")
+
+    totals = backfill_many(
+        store, topics, months=args.months, window=args.window, sources=args.sources,
         channel=args.channel, max_per_window=args.max, pause_seconds=args.pause,
         log=lambda m: print(m),
     )
     print(
         f"Backfill done: {totals['inserted']} new, {totals['duplicate']} duplicate, "
-        f"{totals['skipped']} skipped across {totals['windows']} window(s)."
+        f"{totals['skipped']} skipped across {totals['topics']} topic(s) / "
+        f"{totals['windows']} window(s)."
     )
     store.close()
     return 0
@@ -419,7 +431,8 @@ def build_parser() -> argparse.ArgumentParser:
     sr.set_defaults(func=cmd_search)
 
     b = sub.add_parser("backfill", help="windowed historical backfill of a topic")
-    b.add_argument("topic")
+    b.add_argument("topic", nargs="?", default=None,
+                   help="topic to backfill; omit to backfill all topics in config/topics.yaml")
     b.add_argument("--months", type=int, default=3, help="how far back to go")
     b.add_argument("--window", default="weekly", choices=["weekly", "monthly"])
     b.add_argument("--sources", default="all",

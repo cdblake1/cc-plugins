@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from ai_radar.backfill import date_windows
+from ai_radar.backfill import backfill_many, date_windows
 from ai_radar.models import Document
 from ai_radar.storage import Store
 from ai_radar.textutil import fts_match_query, top_terms
@@ -62,6 +62,28 @@ def test_fts_backfills_preexisting_rows(tmp_path):
 
 
 # --- backfill windows ------------------------------------------------------
+
+def test_backfill_many_covers_all_topics(store):
+    from ai_radar.models import SourceItem
+    from ai_radar.sources.base import Source
+
+    class PerTopicSource(Source):
+        name = "fake"
+
+        def discover(self, p):  # unique id per topic (real sources return distinct items)
+            return [SourceItem("fake", f"{p.topic}-1", f"http://x/{p.topic}", title=p.topic)]
+
+        def fetch_content(self, item):
+            return f"content for {item.title}", "en"
+
+    totals = backfill_many(
+        store, ["agentic coding", "rag"], months=1, window="weekly",
+        sources="arxiv", pause_seconds=0, get_source=lambda n: PerTopicSource(),
+    )
+    assert totals["topics"] == 2
+    assert store.query_documents(topic="agentic coding")
+    assert store.query_documents(topic="rag")
+
 
 def test_date_windows_cover_range_in_sequence():
     today = dt.date(2026, 5, 31)
