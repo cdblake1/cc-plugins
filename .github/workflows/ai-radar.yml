@@ -17,16 +17,38 @@ name: AI Radar
 on:
   workflow_dispatch:
     inputs:
+      task:
+        description: "What to run"
+        type: choice
+        options: [digest, fetch, backfill]
+        default: digest
       topic:
-        description: "Single topic to fetch (blank = all topics in config/topics.yaml)"
+        description: "Topic (required for fetch & backfill; blank digest = all topics)"
+        required: false
+        default: ""
+      months:
+        description: "backfill: how many months back"
+        required: false
+        default: "3"
+      window:
+        description: "backfill: window size"
+        type: choice
+        options: [weekly, monthly]
+        default: weekly
+      sources:
+        description: "Sources: all or comma list (backfill works best with arxiv,hackernews)"
+        required: false
+        default: "all"
+      channel:
+        description: "backfill: YouTube channel (optional, e.g. @handle)"
         required: false
         default: ""
       since:
-        description: "ISO date lower bound (blank = topics.yaml window)"
+        description: "fetch: ISO date lower bound (optional)"
         required: false
         default: ""
       max:
-        description: "Max results per source"
+        description: "Max results per source (per window for backfill)"
         required: false
         default: "8"
   schedule:
@@ -68,16 +90,35 @@ jobs:
           key: ai-radar-db-${{ github.run_id }}
           restore-keys: ai-radar-db-
 
-      - name: Fetch
+      - name: Fetch / backfill
+        env:
+          TASK: ${{ github.event.inputs.task || 'digest' }}
+          TOPIC: ${{ github.event.inputs.topic }}
+          MONTHS: ${{ github.event.inputs.months || '3' }}
+          WINDOW: ${{ github.event.inputs.window || 'weekly' }}
+          SOURCES: ${{ github.event.inputs.sources || 'all' }}
+          CHANNEL: ${{ github.event.inputs.channel }}
+          SINCE: ${{ github.event.inputs.since }}
+          MAXR: ${{ github.event.inputs.max || '8' }}
         run: |
           mkdir -p "$(dirname "$AI_RADAR_DB")"
-          if [ -n "${{ github.event.inputs.topic }}" ]; then
-            ai-radar fetch "${{ github.event.inputs.topic }}" \
-              --max "${{ github.event.inputs.max || '8' }}" \
-              ${{ github.event.inputs.since && format('--since {0}', github.event.inputs.since) || '' }}
-          else
-            ai-radar digest --out-dir digests
-          fi
+          case "$TASK" in
+            backfill)
+              if [ -z "$TOPIC" ]; then echo "::error::backfill requires a topic"; exit 1; fi
+              args=(backfill "$TOPIC" --months "$MONTHS" --window "$WINDOW" --sources "$SOURCES" --max "$MAXR")
+              [ -n "$CHANNEL" ] && args+=(--channel "$CHANNEL")
+              ai-radar "${args[@]}"
+              ;;
+            fetch)
+              if [ -z "$TOPIC" ]; then echo "::error::fetch requires a topic"; exit 1; fi
+              args=(fetch "$TOPIC" --sources "$SOURCES" --max "$MAXR")
+              [ -n "$SINCE" ] && args+=(--since "$SINCE")
+              ai-radar "${args[@]}"
+              ;;
+            *)
+              ai-radar digest --out-dir digests
+              ;;
+          esac
 
       - name: Build wiki + site
         run: |
