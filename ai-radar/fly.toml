@@ -1,0 +1,30 @@
+# Fly.io config for the AI Radar scheduled digest worker.
+# Launch from the ai-radar/ directory:
+#   fly launch --no-deploy --copy-config        # creates the app (edit the name below first)
+#   fly volumes create ai_radar_data --size 1   # 1 GB persistent volume for the SQLite store
+#   fly secrets set ANTHROPIC_API_KEY=sk-... GITHUB_TOKEN=ghp_... GIT_REPO_URL=github.com/cdblake1/cc-plugins.git
+#   fly deploy
+#
+# This is a worker (no public HTTP service): one always-on machine that self-schedules a
+# daily run via the entrypoint loop. To run it as a cost-saving scheduled machine instead,
+# set SCHEDULE_MODE=once and create a scheduled machine (fly machine run ... --schedule daily).
+
+app = "ai-radar-CHANGEME"
+primary_region = "iad"
+
+[build]
+  dockerfile = "deploy/Dockerfile"
+
+[mounts]
+  source = "ai_radar_data"
+  destination = "/data"
+
+[env]
+  AI_RADAR_DB = "/data/store.db"
+  SCHEDULE_MODE = "loop"
+  INTERVAL_SECONDS = "86400"   # daily
+  DIGEST_SUBDIR = "ai-radar/digests"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

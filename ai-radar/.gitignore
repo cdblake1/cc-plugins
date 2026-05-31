@@ -1,0 +1,21 @@
+# Local store / data
+*.db
+*.db-wal
+*.db-shm
+
+# Environments & secrets
+.env
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+
+# Tool output
+output/
+*.digest.md
