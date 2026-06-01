@@ -226,6 +226,21 @@ Point **any** scheduler at that URL — a weekly GitHub Actions cron, a phone sh
 Bearer header or `?token=`), is single-flight (concurrent calls return `409 busy`), and returns
 immediately so it never times out on a multi-minute run.
 
+**Weekly trigger via GitHub Actions** (`.github/workflows/ai-radar-pull.yml`, Mondays 08:00 UTC
++ a manual "Run workflow" button). It only pokes `/pull` — no pipeline runs on GitHub's
+(YouTube-blocked) runners. Add two repo secrets (**Settings → Secrets and variables → Actions →
+New repository secret**):
+
+| Secret | Value |
+|---|---|
+| `FLY_APP_URL` | `https://<your-app>.fly.dev` (no trailing slash) |
+| `PULL_TOKEN`  | the **same** value you set as the Fly `PULL_TOKEN` secret above |
+
+Until both are set the workflow fails fast with a clear error rather than silently no-op'ing.
+The older `ai-radar.yml` workflow is now **manual-only** (its daily cron was removed so it
+doesn't race the Fly pull); run it on demand for one-off fetch/backfill on GitHub's open network
+or to (re)publish the site to GitHub Pages.
+
 `fly.toml` sets `BACKFILL_MONTHS=6`, so the **first run does a one-time 6-month backfill of all
 topics** (guarded by a marker on the volume), then incremental runs after that. Alternatives to
 scale-to-zero: `SCHEDULE_MODE=loop` (always-on; `INTERVAL_SECONDS=604800` = weekly) or
