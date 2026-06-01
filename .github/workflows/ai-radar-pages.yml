@@ -1,0 +1,53 @@
+# AI Radar: publish the prebuilt static site to GitHub Pages.
+#
+# The site is built elsewhere (the Fly /pull runner — or a manual ai-radar.yml run — commits
+# the static HTML to ai-radar/site/). This workflow does NOT build anything: it just deploys
+# whatever is in ai-radar/site/ to Pages whenever that directory changes. That keeps Pages
+# auto-refreshed after each weekly Fly pull without running the (YouTube-blocked) pipeline on
+# GitHub's runners.
+#
+# To serve at https://<owner>.github.io/<repo>/:
+#   Repo Settings → Pages → Build and deployment → Source: "GitHub Actions".
+
+name: AI Radar Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ai-radar/site/**"
+  workflow_dispatch: {}   # manual "republish now" button
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Don't cancel an in-flight deploy; let Pages publishes serialize.
+concurrency:
+  group: ai-radar-pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+        continue-on-error: true
+        with:
+          enablement: true
+
+      - name: Upload site artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ai-radar/site
+
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v4
