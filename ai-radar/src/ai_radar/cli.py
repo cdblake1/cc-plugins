@@ -317,10 +317,11 @@ def cmd_digest(args) -> int:
 
     store = _open_store(args)
     print(f"Building digest → {args.out_dir}")
-    result = run_digest(store, out_dir=args.out_dir, date=args.date, log=lambda m: print(m))
+    result = run_digest(store, out_dir=args.out_dir, date=args.date,
+                        backend=getattr(args, "summarizer", None), log=lambda m: print(m))
     print(
         f"Wrote {result['path']} ({len(result['topics'])} topics, "
-        f"est. cost ${result['total_cost']:.4f})"
+        f"est. cost ${result['cost_usd']:.4f})"
     )
     store.close()
     return 0
@@ -454,6 +455,9 @@ def build_parser() -> argparse.ArgumentParser:
     d = sub.add_parser("digest", help="fetch all configured topics and write a markdown digest")
     d.add_argument("--out-dir", default="digests", help="directory for the digest markdown")
     d.add_argument("--date", help="digest date (YYYY-MM-DD); defaults to today")
+    d.add_argument("--summarizer", choices=["api", "claude_code"],
+                   help="override summarize.backend: 'api' (metered key) or "
+                        "'claude_code' (headless CLI on a Claude subscription, $0 API)")
     d.set_defaults(func=cmd_digest)
 
     sub.add_parser("sources", help="show the curated source config in use").set_defaults(

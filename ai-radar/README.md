@@ -108,36 +108,22 @@ Per-source reality: **arXiv** and **Hacker News** have full date-ranged history;
 **YouTube** backfills well per `--channel`; **RSS** feeds only serve recent entries (no
 historical archive), so they contribute little to a backfill — that's expected.
 
-## Scheduled daily digest + hosting (Fly.io)
+## Scheduled digest
 
 `ai-radar digest` fetches every topic in `config/topics.yaml`, summarizes each, and writes
-a dated markdown digest (with a table of contents and per-topic source references). The
-Claude summarizer is used when `ANTHROPIC_API_KEY` is set, with a per-topic cost ceiling
-(`summarize.max_cost_usd`) and automatic fallback to free extractive summarization.
+a dated markdown digest (table of contents + per-topic source references), plus `latest.md`.
 
 ```bash
 ai-radar digest --out-dir digests        # writes digests/YYYY-MM-DD.md + digests/latest.md
+ai-radar digest --summarizer claude_code # summarize via a Claude subscription, $0 API
 ```
 
-To run it daily on Fly.io with a **persistent SQLite store** and the digest + wiki
-**committed back to this repo**:
-
-```bash
-cd ai-radar
-# edit fly.toml: set a unique app name
-fly launch --no-deploy --copy-config
-fly volumes create ai_radar_data --size 1                 # persistent /data volume
-fly secrets set ANTHROPIC_API_KEY=sk-... \
-                GITHUB_TOKEN=ghp_... \
-                GIT_REPO_URL=github.com/cdblake1/cc-plugins.git
-fly deploy
-```
-
-The container (`deploy/Dockerfile` + `deploy/entrypoint.sh`) self-schedules a daily run
-(`SCHEDULE_MODE=loop`, `INTERVAL_SECONDS=86400`), keeps `store.db` on the `/data` volume,
-and — when `GIT_REPO_URL` + `GITHUB_TOKEN` are set — commits the regenerated digest and
-wiki back to the repo. Set `SCHEDULE_MODE=once` to use a Fly scheduled machine or external
-cron instead. The same Dockerfile runs on any VPS/Docker host.
+Summaries use the Claude map-reduce when `summarize.mode: claude` is set (the default in
+`topics.yaml`), bounded by a per-run cost ceiling (`summarize.max_cost_usd`) and falling back
+to free extractive summaries if no summarizer is available. The **backend** decides the
+wallet — see [Summarization wallets](#summarization-wallets-api-vs-subscription) — and for
+**hosting it on Fly** (recommended, especially for YouTube), see
+[Hosting on Fly.io](#hosting-on-flyio-recommended).
 
 ## Cost-aware Claude summarization (opt-in)
 
@@ -182,31 +168,95 @@ isolated in `summarize/claude.py`), `storage.py` (SQLite DAO), `cli.py` (orchest
 `net.py` (proxy/CA), `config/feeds.yaml` (curated sources).
 
 
-## Hosting on Fly.io (recommended for YouTube)
+## Summarization wallets (API vs subscription)
+
+The Claude summaries can draw on either of two **separate** wallets — pick with
+`summarize.backend` in `topics.yaml` or `digest --summarizer`:
+
+| Backend | Wallet | Auth | Cost |
+|---|---|---|---|
+| `api` (default) | **metered Anthropic API** | `ANTHROPIC_API_KEY` | per-token $ (bounded by `max_cost_usd`) |
+| `claude_code` | **your Claude subscription** | `CLAUDE_CODE_OAUTH_TOKEN` | $0 in cash — consumes your plan's usage windows |
+
+The `claude_code` backend shells out to the headless **Claude Code CLI** (`claude -p`) using
+the *same* structured map-reduce prompts as the API path, so you get identical
+`main idea / key findings / why it matters` briefs without an API bill. Mint the token once:
+
+```bash
+claude setup-token        # prints a CLAUDE_CODE_OAUTH_TOKEN
+```
+
+Honest caveats: it counts against your subscription's usage limits (a fresh 6-month backfill
+can throttle across windows — it waits, never bills), and needs the `claude` CLI present (the
+Fly image installs it). If the CLI/token is missing it falls back to free extractive summaries.
+
+## Hosting on Fly.io (recommended)
 
 GitHub Actions runners share heavily-used IP ranges that YouTube frequently blocks, so on
 Actions most videos fall back to title+description. **Fly.io gives the app a stable, dedicated
-IP**, so `youtube-transcript-api` / yt-dlp succeed far more often — you get real transcripts.
-The whole pipeline (fetch → summarize → digest → wiki → site) runs there on a daily loop with a
-persistent SQLite store, and commits results back to the repo.
+IP** (`fly ips allocate-v4`), so transcript fetches succeed far more often — you get real
+transcripts. The whole pipeline (fetch → summarize → digest → wiki → site) runs there with a
+persistent SQLite store and commits results back to the repo.
+
+The default mode is **scale-to-zero**: the machine sleeps when idle and auto-starts on an
+inbound request. An authenticated `GET /pull` kicks one run in the background; it commits, then
+idles back to zero — so a stopped machine costs only the volume.
 
 ```bash
 cd ai-radar
 # edit fly.toml: set a unique app name (app = "...")
 fly launch --no-deploy --copy-config
 fly volumes create ai_radar_data --size 1            # persistent /data (store + repo clone)
-fly secrets set ANTHROPIC_API_KEY=sk-... \
-                GITHUB_TOKEN=ghp_... \
-                GIT_REPO_URL=github.com/cdblake1/cc-plugins.git
+fly ips allocate-v4                                  # dedicated egress IP → reliable YouTube
+fly secrets set GITHUB_TOKEN=ghp_... \
+                GIT_REPO_URL=github.com/cdblake1/cc-plugins.git \
+                PULL_TOKEN=$(openssl rand -hex 16) \
+                CLAUDE_CODE_OAUTH_TOKEN=...           # subscription summaries (claude setup-token)
 fly deploy
 ```
 
-`fly.toml` sets `BACKFILL_MONTHS=6`, so the **first boot runs a one-time 6-month backfill of
-all topics** (guarded by a marker on the volume), then a daily digest after that. Adjust the
-schedule with `INTERVAL_SECONDS`, or set `SCHEDULE_MODE=once` to drive it from an external cron
-/ Fly scheduled machine. Without `GIT_REPO_URL`/`GITHUB_TOKEN` it writes digest/wiki/site to the
-`/data` volume instead of pushing.
+Then trigger a pull (the machine wakes if asleep):
 
-If a specific video is still blocked, the title+description fallback keeps it in the digest; for
-maximum transcript yield you can later add cookies or a proxy to the yt-dlp options in
-`net.py`/`sources/youtube.py`.
+```bash
+curl -H "Authorization: Bearer $PULL_TOKEN" https://<app>.fly.dev/pull   # 202 accepted
+```
+
+Point **any** scheduler at that URL — a weekly GitHub Actions cron, a phone shortcut, `cron`.
+`GET /health` is unauthenticated for Fly's health check; `/pull` requires `PULL_TOKEN` (as a
+Bearer header or `?token=`), is single-flight (concurrent calls return `409 busy`), and returns
+immediately so it never times out on a multi-minute run.
+
+`fly.toml` sets `BACKFILL_MONTHS=6`, so the **first run does a one-time 6-month backfill of all
+topics** (guarded by a marker on the volume), then incremental runs after that. Alternatives to
+scale-to-zero: `SCHEDULE_MODE=loop` (always-on; `INTERVAL_SECONDS=604800` = weekly) or
+`SCHEDULE_MODE=once` (one run then exit, for a Fly scheduled machine). Without
+`GIT_REPO_URL`/`GITHUB_TOKEN` it writes digest/wiki/site to `/data` instead of pushing. The same
+Dockerfile runs on any VPS/Docker host.
+
+### Ballpark cost
+
+| | Summaries | All-in / mo | All-in / yr |
+|---|---|---|---|
+| **Subscription** (`claude_code`) | $0 cash* | **~$2–3** | **~$27–32** |
+| Haiku API | ~$6–10 | ~$8–13 | ~$100–155 |
+| Sonnet API | ~$18–22 (cap) | ~$20–25 | ~$250–300 |
+
+\*Consumes your Claude plan's usage windows, not dollars. Fly itself ≈ volume (~$0.15/mo) +
+dedicated IPv4 (~$2/mo) + near-zero scale-to-zero compute on a weekly cadence.
+
+### YouTube without getting banned
+
+YouTube gates datacenter IPs behind *"Sign in to confirm you're not a bot."* To pull
+transcripts reliably **without risking a ban**:
+
+- **Use cookies from a dedicated throwaway Google account — never your personal one.** If the
+  cookie ever gets flagged, you lose a burner, not your real account. Export a Netscape
+  `cookies.txt` ([yt-dlp guide](https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp))
+  and pass it as a secret: `fly secrets set YT_COOKIES="$(cat cookies.txt)"` (the entrypoint
+  writes it to the volume and points `YT_COOKIES_FILE` at it). Locally, set
+  `YT_COOKIES_FILE=/path/to/cookies.txt`.
+- **Throttle** — `YT_SLEEP_SECONDS=2` (default in `fly.toml`) spaces requests so cookied
+  traffic looks human. Request *rate*, not cookies per se, is what triggers bans.
+- The **title+description fallback** still captures any video that's gated, so the digest never
+  drops to zero coverage even if a cookie expires. Cookies expire periodically — re-export and
+  reset the secret when YouTube coverage drops.

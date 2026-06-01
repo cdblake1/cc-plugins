@@ -78,6 +78,55 @@ def test_run_digest_map_reduce_with_llm(tmp_path, store, fake_source_factory, mo
     assert store.unsummarized_documents(model="claude-sonnet-4-6", topic="agentic coding") == []
 
 
+def test_run_digest_claude_code_backend_no_api(tmp_path, store, fake_source_factory, monkeypatch):
+    """backend=claude_code summarizes via the CLI subprocess — no ANTHROPIC_API_KEY, no SDK."""
+    import subprocess
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    # Any attempt to construct the Anthropic SDK client should blow up this test.
+    def _no_sdk(*a, **k):  # pragma: no cover - asserts it's never called
+        raise AssertionError("the claude_code backend must not use the Anthropic SDK")
+    fake_anthropic = types.ModuleType("anthropic")
+    fake_anthropic.Anthropic = _no_sdk
+    monkeypatch.setitem(sys.modules, "anthropic", fake_anthropic)
+
+    # Make the CLI "available" and return structured briefs / synthesis text.
+    monkeypatch.setenv("CLAUDE_CLI_BIN", "claude-test")
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
+    monkeypatch.setattr("ai_radar.summarize.claude_code.shutil.which", lambda n: "/bin/claude-test")
+
+    def fake_run(cmd, input=None, **kw):
+        is_doc = any("JSON object" in str(c) for c in cmd)
+        out = ('{"main_idea":"MI","key_findings":["a"],"why_it_matters":"W"}'
+               if is_doc else "Topic synthesis.")
+        return types.SimpleNamespace(returncode=0, stdout=out, stderr="")
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    cfg = _cfg(mode="claude")
+    src = fake_source_factory()
+    res = run_digest(store, cfg, out_dir=tmp_path, date="2026-05-31",
+                     get_source=lambda n: src, backend="claude_code")
+
+    assert res["cost_usd"] == 0.0  # subscription path costs no metered dollars
+    docs = store.query_documents(topic="agentic coding")
+    assert docs and all(d["summary_json"] for d in docs)
+    md = (tmp_path / "2026-05-31.md").read_text()
+    assert "**Main idea:** MI" in md
+
+
+def test_run_digest_claude_code_unavailable_falls_back(tmp_path, store, fake_source_factory, monkeypatch):
+    """No CLI/token → extractive fallback, no crash."""
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.setattr("ai_radar.summarize.claude_code.shutil.which", lambda n: None)
+    cfg = _cfg(mode="claude")
+    src = fake_source_factory()
+    res = run_digest(store, cfg, out_dir=tmp_path, date="2026-05-31",
+                     get_source=lambda n: src, backend="claude_code")
+    assert res["cost_usd"] == 0.0
+    assert store.latest_summary("agentic coding")["mode"] == "extractive"
+
+
 def test_run_digest_budget_ceiling_defers(tmp_path, store, fake_source_factory, monkeypatch):
     """A tiny budget stops summarization; some docs remain unsummarized for next run."""
     _fake_anthropic(monkeypatch)
