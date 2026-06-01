@@ -152,3 +152,40 @@ def test_youtube_description_fallback(monkeypatch):
     text, lang = src.fetch_content(item)
     assert "explains AI agents" in text
     assert item.content_type == "video"  # marked metadata-only, not a transcript
+
+
+# --- YouTube cookies + throttle (ban-safe) ---------------------------------
+
+def test_youtube_no_cookies_by_default(monkeypatch):
+    """With nothing configured, yt-dlp opts carry no cookiefile/sleep — behaves as before."""
+    from ai_radar.sources import youtube
+
+    monkeypatch.delenv("YT_COOKIES_FILE", raising=False)
+    monkeypatch.delenv("YT_SLEEP_SECONDS", raising=False)
+    opts = youtube.YouTubeSource(channels=[])._ydl_opts(extract_flat=True)
+    assert "cookiefile" not in opts
+    assert "sleep_interval" not in opts and "sleep_interval_requests" not in opts
+    assert opts["extract_flat"] is True  # extras still merged
+
+
+def test_youtube_cookies_and_throttle_applied(monkeypatch, tmp_path):
+    """A configured cookies file + sleep land in the yt-dlp opts dict."""
+    from ai_radar.sources import youtube
+
+    cookies = tmp_path / "cookies.txt"
+    cookies.write_text("# Netscape HTTP Cookie File\n")
+    monkeypatch.setenv("YT_COOKIES_FILE", str(cookies))
+    monkeypatch.setenv("YT_SLEEP_SECONDS", "2")
+
+    opts = youtube.YouTubeSource(channels=[])._ydl_opts(writesubtitles=True)
+    assert opts["cookiefile"] == str(cookies)
+    assert opts["sleep_interval_requests"] == 2.0 and opts["sleep_interval"] == 2.0
+
+
+def test_youtube_missing_cookie_path_ignored(monkeypatch):
+    """A pointed-but-absent cookies path is ignored rather than passed to yt-dlp."""
+    from ai_radar.sources import youtube
+
+    monkeypatch.setenv("YT_COOKIES_FILE", "/no/such/cookies.txt")
+    opts = youtube.YouTubeSource(channels=[])._ydl_opts()
+    assert "cookiefile" not in opts

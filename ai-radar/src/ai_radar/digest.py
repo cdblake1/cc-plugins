@@ -30,6 +30,18 @@ def _now() -> str:
     return dt.datetime.now(dt.timezone.utc).isoformat()
 
 
+def _make_summarizer(backend: str, model: str) -> DocumentSummarizer:
+    """Build the structured summarizer for the configured backend.
+
+    Both share DocumentSummarizer's prompts/parsing; only the transport differs:
+    "claude_code" shells out to the subscription CLI ($0 cash), "api" uses the metered SDK.
+    """
+    if (backend or "api").strip().lower() == "claude_code":
+        from .summarize.claude_code import ClaudeCodeSummarizer
+        return ClaudeCodeSummarizer(model)
+    return DocumentSummarizer(model)
+
+
 def run_digest(
     store: Store,
     topics_cfg: dict | None = None,
@@ -38,6 +50,7 @@ def run_digest(
     date: str | None = None,
     get_source=registry.get_source,
     summarizer: DocumentSummarizer | None = None,
+    backend: str | None = None,
     log=lambda *a: None,
 ) -> dict:
     """Fetch + summarize every configured topic and write a curated markdown digest."""
@@ -45,17 +58,23 @@ def run_digest(
 
     cfg = topics_cfg or config.load_topics()
     scfg = cfg["summarize"]
+    if backend:  # CLI --summarizer overrides the configured backend
+        scfg = {**scfg, "backend": backend.strip().lower()}
     date = date or dt.date.today().isoformat()
     today = dt.date.fromisoformat(date)
     since = (today - dt.timedelta(days=cfg["since_days"])).isoformat()
     source_names = registry.resolve_sources(str(cfg["sources"]))
 
-    # One LLM summarizer for the whole run so the budget ceiling is global.
+    # One LLM summarizer for the whole run so the budget ceiling is global. The backend
+    # decides the transport: the metered API, or the headless `claude` CLI on a subscription.
     if summarizer is None and scfg["mode"] == "claude":
-        s = DocumentSummarizer(scfg["model"])
+        backend = scfg.get("backend", "api")
+        s = _make_summarizer(backend, scfg["model"])
         summarizer = s if s.available else None
         if summarizer is None:
-            log("  no ANTHROPIC_API_KEY → extractive summaries")
+            need = ("CLAUDE_CODE_OAUTH_TOKEN / claude CLI" if backend == "claude_code"
+                    else "ANTHROPIC_API_KEY")
+            log(f"  no {need} → extractive summaries")
     budget = float(scfg.get("max_cost_usd", 5.0))
 
     topic_results: list[dict] = []

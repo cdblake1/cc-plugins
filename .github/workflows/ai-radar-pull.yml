@@ -1,0 +1,41 @@
+# AI Radar: weekly trigger for the Fly.io scale-to-zero runner.
+#
+# This does NOT run the pipeline on GitHub's (YouTube-blocked) runners — it just pokes the
+# authenticated /pull endpoint on the Fly app, which wakes the machine, runs one digest with a
+# dedicated IP + the persistent SQLite store, commits results back to this repo, and idles back
+# to zero. See ai-radar/README.md → "Hosting on Fly.io".
+#
+# Required repo secrets (Settings → Secrets and variables → Actions):
+#   FLY_APP_URL   e.g. https://your-app.fly.dev   (no trailing slash)
+#   PULL_TOKEN    must match the PULL_TOKEN secret set on the Fly app
+
+name: AI Radar pull (Fly)
+
+on:
+  schedule:
+    - cron: "0 8 * * 1"      # weekly, Mondays 08:00 UTC
+  workflow_dispatch: {}        # manual "pull now" button
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger /pull on the Fly runner
+        env:
+          FLY_APP_URL: ${{ secrets.FLY_APP_URL }}
+          PULL_TOKEN: ${{ secrets.PULL_TOKEN }}
+        run: |
+          if [ -z "${FLY_APP_URL:-}" ] || [ -z "${PULL_TOKEN:-}" ]; then
+            echo "::error::Set the FLY_APP_URL and PULL_TOKEN repo secrets first."
+            exit 1
+          fi
+          code=$(curl -fsS -o /tmp/pull.out -w '%{http_code}' \
+            -H "Authorization: Bearer ${PULL_TOKEN}" \
+            "${FLY_APP_URL%/}/pull" || true)
+          echo "HTTP ${code}"
+          cat /tmp/pull.out || true
+          # 202 accepted (run started) or 409 busy (a run is already in flight) are both fine.
+          case "$code" in
+            202|409) echo "ok" ;;
+            *) echo "::error::unexpected response ${code}"; exit 1 ;;
+          esac

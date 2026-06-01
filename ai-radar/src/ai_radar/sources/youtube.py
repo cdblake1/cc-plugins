@@ -8,12 +8,34 @@ monkeypatch the imports.
 
 from __future__ import annotations
 
+import os
 import re
 
 from .. import net
 from ..config import load_feeds
 from ..models import FetchParams, SourceItem
 from .base import ContentUnavailable, Source
+
+
+def _cookiefile() -> str | None:
+    """Path to a yt-dlp cookies.txt, from YT_COOKIES_FILE, if it exists.
+
+    Use cookies from a DEDICATED THROWAWAY Google account — never a personal one — to clear
+    YouTube's "Sign in to confirm you're not a bot" gate on datacenter IPs. If the flagged
+    cookie is ever burned, you lose a disposable account, not your real one.
+    """
+    path = os.environ.get("YT_COOKIES_FILE", "").strip()
+    if path and os.path.exists(path):
+        return path
+    return None
+
+
+def _sleep_seconds() -> float:
+    """Per-request politeness delay (seconds). Throttling is the biggest ban-risk lever."""
+    try:
+        return max(0.0, float(os.environ.get("YT_SLEEP_SECONDS", "0") or "0"))
+    except ValueError:
+        return 0.0
 
 
 class YouTubeSource(Source):
@@ -30,6 +52,17 @@ class YouTubeSource(Source):
         proxy = net.proxy_url()
         if proxy:
             opts["proxy"] = proxy
+        ca = net.ca_bundle_path()
+        if ca:  # yt-dlp doesn't read SSL_CERT_FILE the way net.py's urllib opener does.
+            opts["ca_certs"] = ca
+        cookies = _cookiefile()
+        if cookies:
+            opts["cookiefile"] = cookies
+        sleep = _sleep_seconds()
+        if sleep:
+            # Rate-limit so cookied traffic looks human, not like a scraper.
+            opts["sleep_interval_requests"] = sleep
+            opts["sleep_interval"] = sleep
         opts.update(extra)
         return opts
 
@@ -118,8 +151,16 @@ class YouTubeSource(Source):
             from youtube_transcript_api import YouTubeTranscriptApi
         except ImportError:
             return None
+        cookies = _cookiefile()
         try:
-            segments = YouTubeTranscriptApi.get_transcript(video_id)
+            # Pass cookies when supported (signature varies across versions); retry plain.
+            if cookies:
+                try:
+                    segments = YouTubeTranscriptApi.get_transcript(video_id, cookies=cookies)
+                except TypeError:
+                    segments = YouTubeTranscriptApi.get_transcript(video_id)
+            else:
+                segments = YouTubeTranscriptApi.get_transcript(video_id)
         except Exception:
             return None
         text = " ".join(seg.get("text", "") for seg in segments)

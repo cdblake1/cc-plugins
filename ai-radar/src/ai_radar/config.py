@@ -67,6 +67,10 @@ def load_topics(path: Path | None = None) -> dict:
             "mode": summarize.get("mode", "extractive"),
             "model": summarize.get("model", DEFAULT_MODEL),
             "max_cost_usd": float(summarize.get("max_cost_usd", 0.50) or 0.50),
+            # Which engine produces the structured briefs when mode == "claude":
+            #   "api"         — metered Anthropic API (uses ANTHROPIC_API_KEY)
+            #   "claude_code" — headless `claude` CLI on a subscription (CLAUDE_CODE_OAUTH_TOKEN)
+            "backend": str(summarize.get("backend", "api") or "api").strip().lower(),
         },
     }
 
